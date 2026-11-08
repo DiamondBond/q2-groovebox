@@ -42,7 +42,7 @@ wheel changes it, and tapping anything else hands the wheel back.
 | Centre | Hear the sound; in Load, pick the row |
 | Return | Back; where there is nothing to go back to, undo |
 | Return, held | Quit |
-| Prev / Next | Beat: the page of steps on a long track, otherwise the previous or next beat. Sound: the previous or next sound |
+| Prev / Next | Sound: the previous or next sound. Beat, on a long track: the page of steps. Otherwise the previous or next beat |
 
 ### Beat
 
@@ -51,7 +51,8 @@ is one beat. A coloured bar in the list means that sound has steps. **Load sound
 sound a new one.
 
 Hold a step to open it: its note, volume, decay and filter, **Roll** (how many hits in the step),
-**Chance**, **Accent**, **Slide** and **Nudge**. **Done** or Return comes back.
+**Chance**, **Accent**, **Slide** and **Nudge**. **Remove step** takes it off, and **Done** or Return
+comes back.
 
 **Track options** has **Steps** (up to 64; arrows appear beside the hint for the pages), **Speed**
 (1/32 to 1/4, with triplets), **Clear steps** and **Undo**. On a synth or the 303, **Make tune**
@@ -64,8 +65,9 @@ beat plays until its longest track ends.
 **Drums** plays the sixteen sounds; the wheel is a filter sweep. **Notes** plays the lit sound up
 the song's scale, or a drum loop's slices and tricks; the wheel changes the sound. **Effects** are
 twenty-seven punch-in effects, time-synced to the tempo, on two pages: hold a pad to hear one.
-**Record** starts the beat if it is stopped and writes what you play onto the steps, quantised.
-Stop ends the take, and Return undoes it.
+**Record** starts the beat if it is stopped and writes what you play onto the steps, quantised,
+effects included. Record again or Stop ends the take, and Return undoes it. On Effects, with no take
+to undo, Return clears the beat's effects.
 
 ### Sound
 
@@ -111,7 +113,11 @@ from **Music on the card** to resample.
 **Settings** has the song's swing, key and scale, and the effects on the mix: distortion, drive and
 compression, and the echo and reverb that the sounds' Echo and Reverb send to.
 
-Projects live in `.groovebox/projects/` on the card and survive an update; Remove deletes them.
+Projects live in `.groovebox/projects/` on the card, saved two seconds after a change and on the way
+out. They survive an update; Remove deletes them.
+
+Left stopped and untouched for five minutes, Groovebox quits. If its screen stops answering for eight
+seconds it ends itself and writes what each thread was doing to `.groovebox/freeze.txt`.
 
 ## Building
 

@@ -1,8 +1,8 @@
 #!/bin/sh
 # SPDX-License-Identifier: GPL-3.0-only
 # Regenerates what is lifted or rendered from upstream, at the pinned commits: src/sloop_tables.h,
-# src/fx_golden.h, kits/909, kits/808 and kits/melodic. The build needs none of this. Needs cc, ffmpeg,
-# python3 and network. tools/upstream.sh [WORKDIR]
+# src/fx_golden.h, src/x0x, src/felucca, kits/909, kits/808 and kits/melodic. The build needs none of
+# this. Needs cc, ffmpeg, python3 and network. tools/upstream.sh [WORKDIR]
 set -e
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 WORK=${1:-$(mktemp -d)}
@@ -16,6 +16,7 @@ fetch() { # DIR URL COMMIT
 fetch sloop https://github.com/isod89/sloop-fm1 bac9c05
 fetch x0x https://github.com/charlesvestal/fm1-x0x a0d1a13
 fetch felucca https://github.com/hugelton/Felucca a4f007c
+fetch engines https://github.com/hugelton/Felucca-Engines d026007
 
 # SLOOP: the four tables the lift reads, and its own output on the check's input
 python3 -I "$WORK/sloop/tools/gen_tables.py" "$GEN/felucca_tables.h"
@@ -41,6 +42,15 @@ cc -std=gnu11 -O2 -w -I"$GEN" -I"$D" -o "$GEN/x0x_render" "$ROOT/tools/x0x_rende
 rm -rf "$ROOT/kits/909" "$ROOT/kits/808"
 mkdir -p "$ROOT/kits/909" "$ROOT/kits/808"
 "$GEN/x0x_render" "$ROOT/kits/909" "$ROOT/kits/808"
+
+# the live machines: X0X's DSP and generator, Felucca-Engines and their generated tables
+for f in drum909.c drum909.h drum909_dsp.h drum808.c drum808.h bass303.c bass303.h breaks.c breaks.h fxbus.c fxbus.h fastmath.h x0x_param.h; do
+    cp "$D/$f" "$ROOT/src/x0x/dsp/"
+done
+cp "$GEN/x0x_drum_samples.h" "$GEN/x0x_drum_tables.h" "$ROOT/src/x0x/dsp/"
+cp "$WORK"/x0x/firmware/src/seq/tb3po.c "$WORK"/x0x/firmware/src/seq/tb3po.h "$WORK"/x0x/firmware/src/seq/pattern.h "$ROOT/src/x0x/seq/"
+cp "$WORK"/engines/src/* "$ROOT/src/felucca/"
+python3 -I "$WORK/engines/tools/gen_engine_tables.py" "$ROOT/src/felucca/fe_tables.h"
 
 # Felucca's CC0 samples: a second each, and five pitched copies to fill the pads
 M=$ROOT/kits/melodic

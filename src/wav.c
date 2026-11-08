@@ -68,7 +68,7 @@ int wav_read(const char *path, short **pcm) {
     return (int)out_n;
 }
 
-int wav_write(const char *path, const short *pcm, int frames, int ch) {
+FILE *wav_begin(const char *path, int frames, int ch) {
     char tmp[1024];
     if ((size_t)snprintf(tmp, sizeof tmp, "%s.new", path) >= sizeof tmp) return 0;
     FILE *f = fopen(tmp, "wb");
@@ -76,9 +76,19 @@ int wav_write(const char *path, const short *pcm, int frames, int ch) {
     unsigned align = (unsigned)ch * 2, dlen = (unsigned)frames * align;
     unsigned hdr[11] = { 0x46464952, 36 + dlen, 0x45564157, 0x20746d66, 16, 1 | (unsigned)ch << 16, FS, FS * align,
                          align | 16 << 16, 0x61746164, dlen };
-    int ok = fwrite(hdr, 1, 44, f) == 44 && fwrite(pcm, align, (size_t)frames, f) == (size_t)frames;
+    if (fwrite(hdr, 1, 44, f) != 44) return fclose(f), remove(tmp), (FILE *)0;
+    return f;
+}
+int wav_end(FILE *f, const char *path, int ok) {
+    char tmp[1024];
+    snprintf(tmp, sizeof tmp, "%s.new", path);
     ok = fflush(f) == 0 && fsync(fileno(f)) == 0 && ok; /* the card can drop out */
     ok = fclose(f) == 0 && ok;
     if (!ok || rename(tmp, path)) return remove(tmp), 0;
     return 1;
+}
+int wav_write(const char *path, const short *pcm, int frames, int ch) {
+    FILE *f = wav_begin(path, frames, ch);
+    if (!f) return 0;
+    return wav_end(f, path, fwrite(pcm, (size_t)ch * 2, (size_t)frames, f) == (size_t)frames);
 }

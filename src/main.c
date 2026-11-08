@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <time.h>
 #include "engine.h"
 #include "platform.h"
 #include "project.h"
@@ -17,8 +18,14 @@
 static pix canvas[W * H];
 static char project_dir[300];
 
+static long long now_ns(void) {
+    struct timespec t;
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    return t.tv_sec * 1000000000LL + t.tv_nsec;
+}
 static void render(short *out, int frames) {
     int acc[CTL * 2];
+    long long t0 = now_ns();
     ui_lock();
     if (engine_is_offline()) { /* an export owns the engine */
         ui_unlock();
@@ -30,6 +37,7 @@ static void render(short *out, int frames) {
         engine_block(acc);
         for (int i = 0; i < CTL * 2; ++i) out[(f * 2) + i] = (short)acc[i];
     }
+    engine_load((int)((now_ns() - t0) * 100 * FS / frames / 1000000000LL));
     ui_unlock();
 }
 

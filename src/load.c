@@ -6,6 +6,7 @@
  * it ends and the sound carries on, save an export, which has the engine to itself and silences it;
  * a worker thread if that grates. */
 #include <fcntl.h>
+#include <math.h>
 #include <poll.h>
 #include <signal.h>
 #include <stdio.h>
@@ -19,11 +20,16 @@
 #include "platform.h"
 #include "project.h"
 #include "seq.h"
+#include "source.h"
 #include "ui.h"
 #include "wav.h"
+#include "x0x.h"
 
 #define FFMPEG "/usr/bin/ffmpeg"
 #define STALL_MS 30000 /* no output for this long and ffmpeg is given up on */
+#define HOP 512        /* the transient finder's window, 12 ms */
+#define MIN_GAP 8      /* hops between two hits: 90 ms */
+#define MIN_SLICE (FS / 20)
 
 /* <seconds> of file from <from> as mono FS: frames in *out, 0 and none on any failure */
 static int decode(const char *file, int from, int seconds, short **out) {
@@ -101,20 +107,91 @@ int load_pad(int pad, const char *file, int from) {
 
 /* ponytail: the whole file is in memory while it is cut up, 28 MB at most, next to whatever the pads
  * still hold; the pads swap one at a time so the two never add up to more than that. */
-int load_chop(const char *file) {
+typedef struct { float rise; int hop; } hit_t;
+static int by_rise(const void *a, const void *b) { float d = ((const hit_t *)b)->rise - ((const hit_t *)a)->rise; return d > 0 ? 1 : d < 0 ? -1 : 0; }
+static int by_int(const void *a, const void *b) { return *(const int *)a - *(const int *)b; }
+/* where the sound jumps in level: the sixteen biggest jumps in time order, far enough apart, always
+ * starting from the top. A long stretch with no jump gets halved so all sixteen pads have something. */
+static int slice_points(const short *pcm, int n, int *at) {
+    int hops = n / HOP, count = 1, nh = 0;
+    float *e = malloc((size_t)(hops + 1) * sizeof *e);
+    hit_t *h = malloc((size_t)(hops + 1) * sizeof *h);
+    at[0] = 0;
+    if (e && h && hops > 3) {
+        float sum = 0, sq = 0;
+        for (int k = 0; k < hops; ++k) {
+            long long a = 0;
+            for (int i = 0; i < HOP; ++i) a += abs(pcm[k * HOP + i]);
+            e[k] = logf(1 + (float)a / HOP);
+        }
+        for (int k = 1; k < hops; ++k) { float d = e[k] - e[k - 1]; if (d > 0) sum += d, sq += d * d; }
+        float mean = sum / (float)hops, dev = sqrtf(sq / (float)hops - mean * mean);
+        for (int k = 1; k + 1 < hops; ++k) {
+            float d = e[k] - e[k - 1];
+            if (d > mean + dev && d >= e[k + 1] - e[k]) h[nh].rise = d, h[nh++].hop = k;
+        }
+        qsort(h, (size_t)nh, sizeof *h, by_rise);
+        for (int i = 0; i < nh && count < NPAD; ++i) { /* strongest first, none too near one kept */
+            int near = h[i].hop < MIN_GAP, frame = h[i].hop * HOP;
+            for (int k = 1; k < count; ++k) if (abs(at[k] - frame) < MIN_GAP * HOP) near = 1;
+            if (!near) at[count++] = frame;
+        }
+        qsort(at, (size_t)count, sizeof *at, by_int);
+        for (int k = 1; k < count; ++k) { /* back to where the hit starts, inside its window */
+            int peak = 0, end = at[k] + HOP < n ? at[k] + HOP : n, from = at[k] - HOP;
+            for (int i = from; i < end; ++i) if (abs(pcm[i]) > peak) peak = abs(pcm[i]);
+            for (int i = from; i < end; ++i) if (abs(pcm[i]) * 4 > peak) { at[k] = i > 64 ? i - 64 : i; break; }
+        }
+    }
+    free(e), free(h);
+    while (count < NPAD) {
+        int best = 0, len = 0;
+        for (int k = 0; k < count; ++k) {
+            int l = (k + 1 < count ? at[k + 1] : n) - at[k];
+            if (l > len) len = l, best = k;
+        }
+        if (len < 2 * MIN_SLICE) break;
+        memmove(at + best + 2, at + best + 1, (size_t)(count - best - 1) * sizeof *at);
+        at[best + 1] = at[best] + len / 2;
+        ++count;
+    }
+    return count;
+}
+int load_chop(const char *file, int hits) {
     short *pcm;
-    int n = decode(file, 0, NPAD * SOUND_SECONDS, &pcm), slice = n / NPAD, saved = 1;
-    if (slice < 2) return free(pcm), 0;
-    for (int i = 0; i < NPAD; ++i) {
-        short *s = malloc((size_t)slice * sizeof *s);
+    int n = decode(file, 0, NPAD * SOUND_SECONDS, &pcm), at[NPAD + 1], count = NPAD, saved = 1;
+    if (n / NPAD < 2) return free(pcm), 0;
+    if (hits) count = slice_points(pcm, n, at), at[count] = n;
+    else for (int i = 0; i <= NPAD; ++i) at[i] = i * (n / NPAD);
+    for (int i = 0; i < count; ++i) {
+        int len = at[i + 1] - at[i];
+        short *s = malloc((size_t)len * sizeof *s);
         char label[32];
         if (!s) return free(pcm), -1;
-        memcpy(s, pcm + i * slice, (size_t)slice * sizeof *s);
+        memcpy(s, pcm + at[i], (size_t)len * sizeof *s);
+        if (hits) for (int k = 1; k < 64 && k < len; ++k) s[len - k] = (short)(s[len - k] * k / 64); /* no click where the next hit was */
         snprintf(label, sizeof label, "Slice %d", i + 1);
-        saved &= place(i, s, slice, label);
+        saved &= place(i, s, len, label);
+    }
+    for (int i = count; i < NPAD; ++i) {
+        char path[320];
+        sound_swap(i, 0, 0, "", 0);
+        pad_path(path, sizeof path, project_path(), i);
+        unlink(path);
     }
     free(pcm);
     return saved ? 1 : -1;
+}
+int load_break(int pad, const char *file) {
+    int r = load_pad(pad, file, 0);
+    return r && source_break(pad, 0) ? r : 0;
+}
+int load_break_builtin(int pad, int which) {
+    short *pcm;
+    int n = x0x_break_render(which, &pcm);
+    if (!n) return 0;
+    int saved = place(pad, pcm, n, which ? "Break Fill" : "Break Groove");
+    return source_break(pad, 2) ? (saved ? 1 : -1) : 0;
 }
 
 int export_pattern(char *name, size_t len) {
@@ -130,30 +207,29 @@ int export_pattern(char *name, size_t len) {
     } while (!access(path, F_OK) && ++n < 10000);
 
     ui_lock(); /* the engine is this thread's from here: render() outputs silence behind the flag */
-    int cur = seq.cur, cue = seq.cue, playing = seq.playing, chained = seq.chain[0] >= 0 && seq.chain[1] >= 0;
-    int frames = seq_step_frames() * NSTEP * (chained ? 2 : 1);
+    int cur = seq.cur, cue = seq.cue, playing = seq.playing, at = seq.song_at;
+    int frames = seq_song_frames();
     engine_offline(1);
-    if (chained) seq.cur = seq.chain[0];
-    seq.cue = -1, seq.pos = 0, seq.bar = 0, seq.playing = 1;
+    if (seq.nsong > 1) seq.cur = seq.song[0];
+    seq.song_at = 0, seq.cue = -1, seq.pos = 0, seq.bar = seq.pbar = 0, seq.playing = 1;
     ui_unlock();
-    int ok = 0;
-    short *pcm = malloc((size_t)frames * 4);
-    if (pcm) {
-        int acc[CTL * 2];
-        for (int f = 0; f < frames; f += CTL) {
+    FILE *f = wav_begin(path, frames, 2); /* straight to the card: a song can be longer than the memory */
+    int ok = f != 0;
+    for (int done = 0; ok && done < frames;) {
+        static short buf[CTL * 2 * 256];
+        int acc[CTL * 2], n = 0;
+        for (; n < CTL * 256 && done + n < frames; n += CTL) {
             seq_block();
             engine_block(acc);
-            for (int i = 0; i < CTL && f + i < frames; ++i) {
-                pcm[2 * (f + i)] = (short)acc[2 * i];
-                pcm[2 * (f + i) + 1] = (short)acc[2 * i + 1];
-            }
+            for (int i = 0; i < CTL * 2; ++i) buf[2 * n + i] = (short)acc[i];
         }
+        int w = done + n > frames ? frames - done : n;
+        ok = fwrite(buf, 4, (size_t)w, f) == (size_t)w;
+        done += w;
     }
     ui_lock();
-    seq.cur = cur, seq.cue = cue, seq.pos = 0, seq.bar = 0, seq.playing = playing;
+    seq.cur = cur, seq.cue = cue, seq.song_at = at, seq.pos = 0, seq.bar = seq.pbar = 0, seq.playing = playing;
     engine_offline(0);
     ui_unlock();
-    if (pcm) ok = wav_write(path, pcm, frames, 2);
-    free(pcm);
-    return ok;
+    return f ? wav_end(f, path, ok) : 0;
 }

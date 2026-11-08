@@ -4,7 +4,7 @@
 #define UI_H
 #include "groovebox.h"
 #include "platform.h"
-enum { M_PLAY, M_WRITE, M_SOUND, M_FX, M_PATT, M_N };
+enum { M_PLAY, M_KEYS, M_WRITE, M_SOUND, M_FX, M_PATT, M_N };
 void ui_init(void);
 void ui_event(const event_t *e, long long now);
 void ui_tick(long long now);      /* holds that became long, the autosave, the self-close */

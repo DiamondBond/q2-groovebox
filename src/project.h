@@ -6,6 +6,8 @@
 extern char kit_name[32];                    /* the project's kit */
 void sound_swap(int pad, short *pcm, int n, const char *name, int loaded); /* takes pcm; safe while playing */
 int kit_load(const char *dir);               /* sixteen WAVs by name into the pads: how many */
+#define KIT_909_LIVE "909 Live"
+#define KIT_808_LIVE "808 Live"
 int kit_choose(const char *name);            /* this kit, 1 if it opened; else the sounds stay as far as they can */
 void kit_open(const char *name);             /* at start: by name, or default if it is missing */
 const char *project_path(void);

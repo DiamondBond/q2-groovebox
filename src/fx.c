@@ -75,6 +75,9 @@ void fx_buses_block(int *l, int *r, int *dly, int *rev) {
     fx_buses(dly, rev, wet_l, wet_r, CTL);
     for (int i = 0; i < CTL; ++i) l[i] += wet_l[i], r[i] += wet_r[i];
 }
+void fx_feed_block(int *l, int *r, int *rev) { /* ponytail: Freeze holds SLOOP's reverb, so there is nothing to hold under X0X's */
+    for (int i = 0; i < CTL; ++i) rev[i] = clamp(rev[i], -REV_MAX, REV_MAX);
+}
 void fx_punch_block(int *l, int *r) {
     for (int i = 0; i < CTL; ++i) l[i] = clamp(l[i], -MIX_MAX, MIX_MAX), r[i] = clamp(r[i], -MIX_MAX, MIX_MAX);
     punch_process(l, r, CTL);

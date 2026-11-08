@@ -13,5 +13,6 @@ void fx_live(int fx);                         /* the finger's effect, -1 none; i
 void fx_seq(int fx);                          /* the pattern's recorded effect now, -1 none */
 int fx_sounding(void);                        /* the effect running now, -1 none */
 void fx_buses_block(int *l, int *r, int *dly, int *rev); /* the sends through the buses, the wet into l and r */
+void fx_feed_block(int *l, int *r, int *rev);             /* the sends bound for another bus: bounded the same */
 void fx_punch_block(int *l, int *r);
 #endif

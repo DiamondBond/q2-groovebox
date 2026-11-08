@@ -10,6 +10,7 @@
 #define NPAD 16
 #define NSTEP 16
 #define NPATT 16
+#define SOUND_SECONDS 20 /* the longest sound a pad holds */
 #define UNSET (-128) /* a step parameter that isn't locked: the sound's own */
 typedef unsigned pix;  /* 0xffRRGGBB, the panel's word */
 #endif

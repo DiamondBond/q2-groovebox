@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include "groovebox.h"
 #include "wav.h"
 
@@ -13,8 +14,8 @@ static unsigned le(const unsigned char *p, int n) {
     for (int i = n - 1; i >= 0; --i) v = v << 8 | p[i];
     return v;
 }
-#define WAV_MAX (40 * 1024 * 1024) /* ponytail: a sound is seconds long; this stops a 2 GB file */
-#define OUT_MAX (FS * 60)          /* a minute at FS: 5 MB a pad, 16 pads well within the Q2's memory */
+#define WAV_MAX (24 * 1024 * 1024) /* ponytail: 20 s of 192 kHz 24-bit stereo; this stops a 2 GB file */
+#define OUT_MAX (FS * SOUND_SECONDS) /* a longer file keeps its first twenty seconds: 1.8 MB a pad, 28 MB across sixteen */
 int wav_read(const char *path, short **pcm) {
     *pcm = 0;
     FILE *f = fopen(path, "rb");
@@ -41,8 +42,8 @@ int wav_read(const char *path, short **pcm) {
         return free(b), 0;
     unsigned bps = bits / 8, frames = dlen / (bps * ch);
     unsigned long long out_ll = (unsigned long long)frames * FS / rate;
-    if (out_ll < 2 || out_ll > OUT_MAX) return free(b), 0;
-    unsigned out_n = (unsigned)out_ll;
+    if (out_ll < 2) return free(b), 0;
+    unsigned out_n = out_ll > OUT_MAX ? OUT_MAX : (unsigned)out_ll;
     short *out = malloc(out_n * sizeof *out);
     if (!out) return free(b), 0;
     for (unsigned i = 0; i < out_n; ++i) {
@@ -67,11 +68,17 @@ int wav_read(const char *path, short **pcm) {
     return (int)out_n;
 }
 
-int wav_write(const char *path, const short *stereo, int frames) {
-    FILE *f = fopen(path, "wb");
+int wav_write(const char *path, const short *pcm, int frames, int ch) {
+    char tmp[1024];
+    if ((size_t)snprintf(tmp, sizeof tmp, "%s.new", path) >= sizeof tmp) return 0;
+    FILE *f = fopen(tmp, "wb");
     if (!f) return 0;
-    unsigned dlen = (unsigned)frames * 4, hdr[11] = { 0x46464952, 36 + dlen, 0x45564157, 0x20746d66, 16,
-                                                         1 | 2 << 16, FS, FS * 4, 4 | 16 << 16, 0x61746164, dlen };
-    int ok = fwrite(hdr, 1, 44, f) == 44 && fwrite(stereo, 4, (size_t)frames, f) == (size_t)frames;
-    return fclose(f) == 0 && ok;
+    unsigned align = (unsigned)ch * 2, dlen = (unsigned)frames * align;
+    unsigned hdr[11] = { 0x46464952, 36 + dlen, 0x45564157, 0x20746d66, 16, 1 | (unsigned)ch << 16, FS, FS * align,
+                         align | 16 << 16, 0x61746164, dlen };
+    int ok = fwrite(hdr, 1, 44, f) == 44 && fwrite(pcm, align, (size_t)frames, f) == (size_t)frames;
+    ok = fflush(f) == 0 && fsync(fileno(f)) == 0 && ok; /* the card can drop out */
+    ok = fclose(f) == 0 && ok;
+    if (!ok || rename(tmp, path)) return remove(tmp), 0;
+    return 1;
 }

@@ -7,7 +7,8 @@
 typedef struct {
     short *pcm; /* mono, FS */
     int n;
-    char name[32], file[256];
+    char name[32];
+    int loaded; /* from Load, kept beside the project as pad%02d.wav */
 } sample_t;
 /* SOUND's sixteen tiles, in pad order (Load is ui.c's) */
 enum { P_LEVEL, P_PAN, P_PITCH, P_FINE, P_START, P_END, P_LOOP, P_REVERSE,
@@ -29,5 +30,8 @@ void engine_sweep(int v);    /* PLAY's knob: -100 (low-pass closed) .. 0 (off) .
 int engine_peak(void);       /* the last block's peak, 0..32767 */
 unsigned engine_blocks(void);           /* blocks rendered since start */
 unsigned engine_last_hit(int pad);      /* the block the pad last sounded in */
+void engine_stop(int pad);              /* cuts the pad's voice, under ui_lock */
+void engine_offline(int on);            /* under ui_lock: the audio thread renders silence, the UI thread the engine */
+int engine_is_offline(void);
 int bt_gain(int vol);                   /* hciplayer's soft-volume curve, 0..100 to Q16 */
 #endif

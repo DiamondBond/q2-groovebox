@@ -14,6 +14,7 @@ void plat_show(const pix *canvas);          /* W x H to the screen */
 void plat_close(void);
 long long plat_ms(void);                    /* monotonic */
 const char *plat_dir(void);                 /* the binary's folder, for kits and projects */
+const char *plat_media(void);               /* the card's root: Load browses it, exports land in it */
 int plat_audio_start(void (*render)(short *stereo, int frames)); /* argv-chosen output; 0 on failure */
 void plat_audio_stop(void);
 int plat_underruns(void);

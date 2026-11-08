@@ -1,13 +1,14 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Diamond Bond
  * The sampler. Each voice reads its sample at a 16.16 position with linear interpolation, through
- * an AD envelope and a state-variable low-pass, into a stereo Q15 accumulator; the mix takes the
- * master gain, PLAY's filter sweep and a limiter. Levels taper as level², so the top half of the
- * range is where the ear expects it. ponytail: triggers land at block starts (0.7 ms); echo and
- * reverb sends are stored but not yet rendered. */
+ * an AD envelope and a state-variable low-pass, into a stereo Q15 accumulator and the echo and
+ * reverb sends; the mix takes the buses (fx.c), PLAY's filter sweep, the punch-in effect, the master
+ * gain and a limiter. Levels taper as level², so the top half of the range is where the ear expects
+ * it. ponytail: triggers land at block starts (0.7 ms). */
 #include <math.h>
 #include <string.h>
 #include "engine.h"
+#include "fx.h"
 
 sound_t sounds[NPAD];
 const char *const param_names[P_N] = { "Level", "Pan",    "Pitch",  "Fine",  "Start", "End",
@@ -20,13 +21,13 @@ const int param_def[P_N] = { 100, 0, 0, 0, 0, 127, 0, 0, 0, 127, 127, 0, 0, 0, 0
 typedef struct {
     int on, pad;
     unsigned long long pos, end, start; /* 16.16 frames into the sample, wide enough past 65535 frames */
-    int inc, loop, reverse, gl, gr; /* gains Q15 */
+    int inc, loop, reverse, gl, gr, ge, gv; /* gains Q15: left, right, the echo and reverb sends */
     float env, att_step, dec_k;     /* attack adds, decay multiplies, per frame */
     float f, q, lp, bp;             /* the voice's filter */
 } voice_t;
 static voice_t voices[NPAD];
 static struct {
-    int gain, sweep;
+    int gain, sweep, offline;
     float sf, sq, lp[2], bp[2]; /* the master sweep's filter, a channel each */
     float lim;                  /* the limiter's gain, 0..1 */
     int peak;
@@ -45,11 +46,23 @@ void engine_init(void) {
     memset(&eg, 0, sizeof eg);
     eg.gain = 65536;
     eg.lim = 1;
+    fx_init();
 }
 void engine_gain(int q16) { eg.gain = q16; }
 int engine_peak(void) { return eg.peak; }
 unsigned engine_blocks(void) { return eg.blocks; }
 unsigned engine_last_hit(int pad) { return eg.hit[pad]; }
+void engine_stop(int pad) { voices[pad].on = 0; }
+int engine_is_offline(void) { return eg.offline; }
+void engine_offline(int on) { /* a clean slate either way; on, the file gets no soft volume or sweep */
+    static int gain, sweep;
+    if (on) gain = eg.gain, sweep = eg.sweep, eg.gain = 65536, eg.sweep = 0;
+    else eg.gain = gain, eg.sweep = sweep;
+    memset(voices, 0, sizeof voices);
+    fx_init();
+    eg.lim = 1;
+    eg.offline = on;
+}
 
 /* a cutoff 0..127 as the SVF's frequency coefficient: 40 Hz to the top, in octaves */
 static float svf_f(int cutoff) {
@@ -82,6 +95,7 @@ void engine_trigger(int pad, int level, int pitch, int decay, int cutoff) {
     v->start = ((unsigned long long)n * (unsigned)s->p[P_START] / 127) << 16;
     v->end = ((unsigned long long)n * (unsigned)s->p[P_END] / 127) << 16;
     if (v->end > (unsigned long long)(n - 1) << 16) v->end = (unsigned long long)(n - 1) << 16;
+    if (v->end < 1ull << 16) v->end = 1ull << 16; /* End 0 still has a frame */
     if (v->start + (1ull << 16) >= v->end) v->start = v->end - (1ull << 16); /* at least a frame */
     v->pos = v->start;
     v->inc = (int)(65536 * exp2f((semis + s->p[P_FINE] * 0.01f) / 12));
@@ -90,6 +104,8 @@ void engine_trigger(int pad, int level, int pitch, int decay, int cutoff) {
     int amp = lv * lv * 32767 / (127 * 127), pan = s->p[P_PAN]; /* -64..63 */
     v->gl = amp * (63 - pan) / 127;
     v->gr = amp * (64 + pan) / 127;
+    v->ge = amp * s->p[P_ECHO] / 127;
+    v->gv = amp * s->p[P_REVERB] / 127;
     int att = s->p[P_ATTACK];
     float att_s = att * att * (1.0f / (127 * 127)); /* up to a second */
     v->att_step = att_s > 0 ? 1 / (att_s * FS) : 2; /* 2: no attack left */
@@ -103,16 +119,17 @@ void engine_trigger(int pad, int level, int pitch, int decay, int cutoff) {
     eg.hit[pad] = eg.blocks;
 }
 
-static void voice_block(voice_t *v, int *acc) {
+static void voice_block(voice_t *v, int *l, int *r, int *dly, int *rev) {
     const short *pcm = sounds[v->pad].smp.pcm;
-    unsigned n = (unsigned)sounds[v->pad].smp.n;
+    unsigned n = (unsigned)sounds[v->pad].smp.n, ends = (unsigned)(v->start >> 16) + (unsigned)(v->end >> 16);
     for (int i = 0; i < CTL; ++i) {
         if (v->pos >= v->end) {
             if (!v->loop) { v->on = 0; return; }
             v->pos = v->start + (v->pos - v->end) % (v->end - v->start);
         }
         unsigned idx = (unsigned)(v->pos >> 16), frac = (unsigned)(v->pos & 0xffff);
-        unsigned i0 = v->reverse ? n - 1 - idx : idx, i1 = v->reverse ? (i0 ? i0 - 1 : 0) : i0 + 1;
+        unsigned i0 = v->reverse ? ends - idx : idx, /* Reverse mirrors within the region */
+                  i1 = v->reverse ? (i0 ? i0 - 1 : 0) : i0 + 1;
         int s0 = pcm[i0], s1 = pcm[i1 < n ? i1 : n - 1];
         float s = (float)(s0 + (int)(((long long)(s1 - s0) * (int)frac) >> 16));
         if (v->att_step < 2) { /* the attack, then the decay */
@@ -128,30 +145,40 @@ static void voice_block(voice_t *v, int *acc) {
             s = v->lp;
         }
         int si = (int)s;
-        acc[2 * i] += (int)((long long)si * v->gl >> 15); /* a resonant peak can top full scale */
-        acc[2 * i + 1] += (int)((long long)si * v->gr >> 15);
+        l[i] += (int)((long long)si * v->gl >> 15); /* a resonant peak can top full scale */
+        r[i] += (int)((long long)si * v->gr >> 15);
+        if (v->ge) dly[i] += (int)((long long)si * v->ge >> 15);
+        if (v->gv) rev[i] += (int)((long long)si * v->gv >> 15);
         v->pos += (unsigned)v->inc;
         if (v->att_step >= 2 && v->env < 0.0005f && v->dec_k < 1) { v->on = 0; return; }
     }
 }
 
+static void sweep_channel(int *b, int ch) { /* the master sweep */
+    float lp = eg.lp[ch], bp = eg.bp[ch];
+    for (int i = 0; i < CTL; ++i) {
+        float x = (float)b[i];
+        lp += eg.sf * bp;
+        float hp = x - lp - eg.sq * bp;
+        bp += eg.sf * hp;
+        b[i] = (int)(eg.sweep < 0 ? lp : hp);
+    }
+    eg.lp[ch] = lp, eg.bp[ch] = bp;
+}
+
 void engine_block(int *out) {
-    memset(out, 0, CTL * 2 * sizeof *out);
+    int l[CTL] = { 0 }, r[CTL] = { 0 }, dly[CTL] = { 0 }, rev[CTL] = { 0 }, peak = 0;
     for (int i = 0; i < NPAD; ++i)
-        if (voices[i].on) voice_block(&voices[i], out);
-    int a = eg.sweep < 0 ? -eg.sweep : eg.sweep, peak = 0;
+        if (voices[i].on) voice_block(&voices[i], l, r, dly, rev);
+    fx_buses_block(l, r, dly, rev);
+    if (eg.sweep > 2 || eg.sweep < -2) sweep_channel(l, 0), sweep_channel(r, 1);
+    fx_punch_block(l, r);
+    for (int i = 0; i < CTL; ++i) {
+        out[2 * i] = (int)((long long)l[i] * eg.gain >> 16);
+        out[2 * i + 1] = (int)((long long)r[i] * eg.gain >> 16);
+    }
     for (int i = 0; i < CTL * 2; ++i) {
-        float s = (float)out[i];
-        if (a > 2) { /* the master sweep, a filter a channel */
-            float *lp = &eg.lp[i & 1], *bp = &eg.bp[i & 1];
-            *lp += eg.sf * *bp;
-            float hp = s - *lp - eg.sq * *bp;
-            *bp += eg.sf * hp;
-            s = eg.sweep < 0 ? *lp : hp;
-        }
-        int v = (int)((long long)(int)s * eg.gain >> 16);
-        out[i] = v;
-        if (v < 0) v = -v;
+        int v = out[i] < 0 ? -out[i] : out[i];
         if (v > peak) peak = v;
     }
     /* the limiter: the block's peak pulls the gain down at once, it eases back up */

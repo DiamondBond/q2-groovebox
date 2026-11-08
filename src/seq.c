@@ -7,6 +7,7 @@
 #include <string.h>
 #include "seq.h"
 #include "engine.h"
+#include "fx.h"
 
 seq_t seq;
 
@@ -51,8 +52,17 @@ static void bar_end(void) {
         seq.cur = seq.cur == seq.chain[0] ? seq.chain[1] : seq.chain[0];
     ++seq.bar;
 }
+static int fx_at(int pos) { /* the current pattern's effect at pos frames into the bar, -1 none */
+    const pattern_t *p = &seq.pat[seq.cur];
+    int s = pos / seq_step_frames();
+    for (int i = p->nev - 1; i >= 0; --i)
+        if (s >= p->ev[i].step && s < p->ev[i].step + p->ev[i].len) return p->ev[i].fx;
+    return -1;
+}
 void seq_block(void) {
+    fx_clock(seq.playing, seq.bpm, seq.pos % (seq_step_frames() * 4));
     if (!seq.playing) return;
+    fx_seq(fx_at(seq.pos));
     int barf = seq_step_frames() * NSTEP, end = seq.pos + CTL;
     fire(seq.pos, end < barf ? end : barf);
     if (end >= barf) {
@@ -68,6 +78,7 @@ void seq_play(int on) {
     seq.pos = 0;
     seq.bar = 0;
     if (on && seq.cue >= 0) seq.cur = seq.cue, seq.cue = -1;
+    if (!on) fx_seq(-1);
 }
 void seq_cue(int pattern) {
     pattern = ((pattern % NPATT) + NPATT) % NPATT;
@@ -94,10 +105,37 @@ void seq_tap(int pad) {
     if (n >= NSTEP || onset(n, stepf, st->nudge) <= seq.pos) /* its onset has passed: sound it now */
         engine_trigger(pad, UNSET, UNSET, UNSET, UNSET);
 }
+void seq_fx_start(int fx) {
+    pattern_t *p = &seq.pat[seq.cur];
+    if (!seq.playing || !seq.rec || p->nev >= NFXEV) return;
+    int n = seq_quantise(seq.pos);
+    if (seq.ntake < (int)(sizeof seq.take / sizeof *seq.take)) {
+        seq.take[seq.ntake].pat = (signed char)seq.cur;
+        seq.take[seq.ntake].pad = -1;
+        seq.take[seq.ntake].step = (signed char)p->nev;
+        ++seq.ntake;
+    }
+    p->ev[p->nev].step = (signed char)(n % NSTEP);
+    p->ev[p->nev].len = 1;
+    p->ev[p->nev].fx = (signed char)fx;
+    seq.fxrec.on = 1, seq.fxrec.pat = seq.cur, seq.fxrec.step = p->nev, seq.fxrec.start = n, seq.fxrec.bar = seq.bar;
+    ++p->nev;
+}
+int seq_fx_end(void) {
+    if (!seq.fxrec.on) return 0;
+    seq.fxrec.on = 0;
+    if (!seq.playing || seq.fxrec.step >= seq.pat[seq.fxrec.pat].nev) return 1; /* stopped, or undone meanwhile */
+    fxev_t *e = &seq.pat[seq.fxrec.pat].ev[seq.fxrec.step];
+    int len = (int)(seq.bar - seq.fxrec.bar) * NSTEP + seq_quantise(seq.pos) - seq.fxrec.start, room = NSTEP - e->step;
+    e->len = (signed char)(len < 1 ? 1 : len > room ? room : len);
+    return 1;
+}
 void seq_undo(void) {
     while (seq.ntake > 0) {
         --seq.ntake;
-        seq.pat[(int)seq.take[seq.ntake].pat].s[(int)seq.take[seq.ntake].pad][(int)seq.take[seq.ntake].step].on = 0;
+        int pat = seq.take[seq.ntake].pat, pad = seq.take[seq.ntake].pad, step = seq.take[seq.ntake].step;
+        if (pad < 0) seq.pat[pat].nev = step;
+        else seq.pat[pat].s[pad][step].on = 0;
     }
 }
 int seq_playhead(void) {

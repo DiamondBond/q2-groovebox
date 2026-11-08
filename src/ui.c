@@ -3,11 +3,18 @@
  * The stage: a strip, sixteen pads and five mode tabs, the pads meaning what the mode says. The
  * wheel is one knob, always the value the strip names; a held pad makes it that pad's. Centre tap
  * is REC, Centre held is the modifier (volume on the wheel, select or copy on a pad). Return taps
- * undo; its hold is the firmware's quit and is never bound here. */
+ * undo; its hold is the firmware's quit and is never bound here. SOUND's Load opens a picker over
+ * the pads, which has Centre and Return to itself while it is open. */
+#include <dirent.h>
 #include <pthread.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include "engine.h"
+#include "fx.h"
+#include "load.h"
+#include "project.h"
 #include "seq.h"
 #include "ui.h"
 #include "font.h"
@@ -28,12 +35,18 @@
 #define HOLD_MS 300        /* Centre down this long is a hold */
 #define IDLE_QUIT_MS (5 * 60 * 1000)
 #define AUTOSAVE_MS 2000
+#define MSG_MS 2000        /* how long a job's result stays on the strip */
+#define ROW_H 24           /* the picker's rows */
+#define PICK_ROWS 12
+#define PICK_MAX 512       /* ponytail: the first 512 of a folder are listed */
+#define REGIONS 15         /* the pick's start points, SOUND_SECONDS apart */
 
 enum { L_LEVEL, L_PITCH, L_DECAY, L_CUTOFF, L_NUDGE, L_N }; /* WRITE's lock parameters */
 static const char *const lock_names[L_N] = { "Level", "Pitch", "Decay", "Cutoff", "Nudge" };
 static const int lock_param[L_N] = { P_LEVEL, P_PITCH, P_DECAY, P_CUTOFF, -1 };
 static const char *const mode_names[M_N] = { "PLAY", "WRITE", "SOUND", "FX", "PATT" };
 enum { WT_MODE, WT_BPM, WT_VOL }; /* what the wheel turns when no pad is held */
+enum { J_NONE, J_KIT, J_PAD, J_CHOP, J_EXPORT }; /* the slow job ui_tick is to run */
 
 static struct {
     int mode, sound, tile, lock, wheel_to;
@@ -47,8 +60,18 @@ static struct {
     int dirty, quit;
     int strip_flash;    /* the value shown large: the param index shown, -1 */
     char strip_name[16], strip_val[16];
+    int fx_page, fx_latched;
+    int job, job_shown, job_from;
+    char job_arg[32], msg[40];
+    long long msg_until;
     pthread_mutex_t lock_m;
 } ui;
+
+static struct {
+    int open, n, cur, top, asking, asked_cur, scan, scan_cur;
+    char dir[640], file[900];
+    struct { char kind, name[256]; } row[PICK_MAX]; /* k a kit, d a folder, f a file, c chop, r a region */
+} pick;
 
 void ui_lock(void) { pthread_mutex_lock(&ui.lock_m); }
 void ui_unlock(void) { pthread_mutex_unlock(&ui.lock_m); }
@@ -84,6 +107,143 @@ static int tab_at(int x, int y) {
     return (y - STRIP) / TAB_H;
 }
 
+/* ---- slow jobs: asked for under the lock, run from ui_tick off it, once the strip has said so ---- */
+static void say(const char *m, long long until) {
+    snprintf(ui.msg, sizeof ui.msg, "%s", m);
+    ui.msg_until = until;
+}
+static void job_start(int job, const char *m, long long now) {
+    ui.job = job, ui.job_shown = 0;
+    say(m, now + 3600000);
+}
+static void job_run(long long now) {
+    int job = ui.job, r;
+    char name[32] = "";
+    ui.job = 0;
+    switch (job) {
+    case J_KIT:
+        if (kit_choose(ui.job_arg)) {
+            pads_forget(project_path());
+            snprintf(ui.msg, sizeof ui.msg, "Kit: %s", kit_name);
+            changed(now);
+        } else snprintf(ui.msg, sizeof ui.msg, "Can't read it");
+        break;
+    case J_EXPORT:
+        if (export_pattern(name, sizeof name)) snprintf(ui.msg, sizeof ui.msg, "Saved %s", name);
+        else snprintf(ui.msg, sizeof ui.msg, "Export failed");
+        ui_lock(); /* the engine started over */
+        seq_fx_end();
+        ui.fx_latched = 0;
+        ui_unlock();
+        break;
+    default:
+        r = job == J_CHOP ? load_chop(pick.file) : load_pad(ui.sound, pick.file, ui.job_from * SOUND_SECONDS);
+        snprintf(ui.msg, sizeof ui.msg, "%s", r > 0 ? "Loaded" : r < 0 ? "Loaded, not saved" : "Can't read it");
+        if (r) changed(now);
+    }
+    ui.msg_until = plat_ms() + MSG_MS; /* a long job has outlived now */
+}
+
+/* ---- the picker: the kits and the card's folders and sounds ---- */
+static int row_rank(char k) { return k == 'k' ? 0 : k == 'd' ? 1 : 2; }
+static int row_cmp(const void *a, const void *b) {
+    const char *x = a, *y = b; /* a row's first bytes are its kind, then its name */
+    int d = row_rank(x[0]) - row_rank(y[0]);
+    return d ? d : strcasecmp(x + 1, y + 1);
+}
+static void pick_add(char kind, const char *name) {
+    if (pick.n >= PICK_MAX) return;
+    pick.row[pick.n].kind = kind;
+    snprintf(pick.row[pick.n++].name, sizeof pick.row[0].name, "%s", name);
+}
+static int is_audio(const char *s) {
+    static const char *const ext[] = { ".wav", ".mp3", ".flac", ".m4a", ".aac", ".ogg", ".opus", ".ape", ".wma",
+                                       ".aif", ".aiff", ".alac", ".dsf", ".dff" };
+    const char *dot = strrchr(s, '.');
+    if (dot)
+        for (size_t i = 0; i < sizeof ext / sizeof *ext; ++i)
+            if (!strcasecmp(dot, ext[i])) return 1;
+    return 0;
+}
+static int is_dir(const char *parent, const struct dirent *e) {
+    if (e->d_type != DT_UNKNOWN && e->d_type != DT_LNK) return e->d_type == DT_DIR;
+    char path[1024];
+    struct stat st;
+    snprintf(path, sizeof path, "%s/%s", parent, e->d_name);
+    return !stat(path, &st) && S_ISDIR(st.st_mode);
+}
+static void pick_scan(void) { /* off the lock: a big folder on the card must not hold up the sound */
+    pick.n = pick.cur = pick.top = pick.asking = 0;
+    if (!strcmp(pick.dir, plat_media())) { /* the kits lead the card's root */
+        char kits[300];
+        snprintf(kits, sizeof kits, "%s/kits", plat_dir());
+        DIR *k = opendir(kits);
+        for (struct dirent *e; k && (e = readdir(k));)
+            if (e->d_name[0] != '.' && is_dir(kits, e)) pick_add('k', e->d_name);
+        if (k) closedir(k);
+    }
+    DIR *d = opendir(pick.dir);
+    for (struct dirent *e; d && pick.n < PICK_MAX && (e = readdir(d));) {
+        if (e->d_name[0] == '.') continue;
+        if (is_dir(pick.dir, e)) pick_add('d', e->d_name);
+        else if (is_audio(e->d_name)) pick_add('f', e->d_name);
+    }
+    if (d) closedir(d);
+    qsort(pick.row, (size_t)pick.n, sizeof pick.row[0], row_cmp);
+}
+static void pick_move(int n) {
+    if (!pick.n) return;
+    pick.cur = clampi(pick.cur + n, 0, pick.n - 1);
+    if (pick.cur < pick.top) pick.top = pick.cur;
+    if (pick.cur >= pick.top + PICK_ROWS) pick.top = pick.cur - PICK_ROWS + 1;
+}
+static void pick_rescan(int cur) { pick.n = 0, pick.scan = 1, pick.scan_cur = cur; } /* ui_tick does it */
+static void pick_open(void) {
+    snprintf(pick.dir, sizeof pick.dir, "%s", plat_media());
+    pick_rescan(0);
+    pick.open = 1;
+}
+static void pick_ask(void) { /* a file picked: all of it across the kit, or twenty seconds of it to this pad */
+    char b[64];
+    pick.asked_cur = pick.cur;
+    pick.n = pick.cur = pick.top = 0;
+    pick_add('c', "Chop across all 16 pads");
+    for (int i = 0; i < REGIONS; ++i) {
+        int s = i * SOUND_SECONDS;
+        snprintf(b, sizeof b, "To pad %d from %d:%02d", ui.sound + 1, s / 60, s % 60);
+        pick_add('r', b);
+    }
+    pick.asking = 1;
+}
+static void pick_back(void) {
+    if (pick.asking) pick.asking = 0, pick_rescan(pick.asked_cur);
+    else if (!strcmp(pick.dir, plat_media())) pick.open = 0;
+    else *strrchr(pick.dir, '/') = 0, pick_rescan(0);
+}
+static void pick_choose(long long now) {
+    if (!pick.n) return;
+    const char *name = pick.row[pick.cur].name;
+    size_t l = strlen(pick.dir);
+    switch (pick.row[pick.cur].kind) {
+    case 'k':
+        snprintf(ui.job_arg, sizeof ui.job_arg, "%s", name);
+        pick.open = 0;
+        job_start(J_KIT, "Loading kit", now);
+        break;
+    case 'd':
+        if (l + 1 + strlen(name) < sizeof pick.dir) snprintf(pick.dir + l, sizeof pick.dir - l, "/%.255s", name), pick_rescan(0);
+        break;
+    case 'f':
+        snprintf(pick.file, sizeof pick.file, "%s/%s", pick.dir, name);
+        pick_ask();
+        break;
+    default:
+        ui.job_from = pick.cur - 1; /* row 0 is the chop */
+        pick.open = 0;
+        job_start(pick.row[pick.cur].kind == 'c' ? J_CHOP : J_PAD, "Loading", now);
+    }
+}
+
 /* ---- the wheel ---- */
 static int detents(int d) { /* units to whole steps, the remainder kept */
     ui.acc += d;
@@ -95,6 +255,7 @@ static int detents(int d) { /* units to whole steps, the remainder kept */
 static void turn_param(sound_t *s, int k, int n) { s->p[k] = clampi(s->p[k] + n, param_min[k], param_max[k]); }
 static void wheel(int d, long long now) {
     d = -d; /* the firmware's travel rises anticlockwise; here clockwise is up */
+    if (pick.open) { pick_move(detents(d)); return; }
     if (ui.centre) ui.centre_hold = 1;
     ui.turned = 1;
     if (ui.centre) { /* volume, or PATT's swing */
@@ -105,7 +266,7 @@ static void wheel(int d, long long now) {
         changed(now);
         return;
     }
-    if (ui.pad >= 0) { /* that pad's value */
+    if (ui.pad >= 0 && ui.mode != M_FX) { /* that pad's value */
         int n = detents(d);
         if (!n) return;
         if (ui.mode == M_PLAY) turn_param(&sounds[ui.pad], P_PITCH, n), ui.sound = ui.pad;
@@ -134,6 +295,7 @@ static void wheel(int d, long long now) {
     int n = detents(d);
     if (!n) return;
     if (ui.mode == M_SOUND) turn_param(&sounds[ui.sound], ui.tile, n), changed(now);
+    else if (ui.mode == M_FX) ui.fx_page = clampi(ui.fx_page + n, 0, FX_PAGES - 1);
     else if (ui.mode == M_WRITE) {
         int k = lock_param[ui.lock];
         if (k >= 0) turn_param(&sounds[ui.sound], k, n);
@@ -143,6 +305,19 @@ static void wheel(int d, long long now) {
 }
 
 /* ---- pads ---- */
+static void fx_stop(long long now) {
+    fx_live(-1);
+    if (seq_fx_end()) changed(now);
+}
+static void fx_down(int i, long long now) {
+    int f = fx_page[ui.fx_page][i];
+    if (ui.fx_latched) { ui.fx_latched = 0, fx_stop(now); return; } /* the tap that ends a latch does only that */
+    if (f < 0) return;
+    ui.fx_latched = ui.centre;
+    fx_live(f);
+    seq_fx_start(f);
+    if (seq.fxrec.on) changed(now);
+}
 static void pad_down(int i, long long now) {
     if (ui.pad >= 0) return;
     ui.pad = i;
@@ -154,10 +329,13 @@ static void pad_down(int i, long long now) {
         if (!ui.centre) seq_tap(i), changed(now);
     } else if (ui.mode == M_SOUND)
         ui.tile = i;
+    else if (ui.mode == M_FX)
+        fx_down(i, now);
 }
 static void pad_up(int i, long long now) {
     if (i != ui.pad) return;
     ui.pad = -1;
+    if (ui.mode == M_FX && !ui.fx_latched) fx_stop(now);
     if (ui.turned) return; /* a turn, or PATT's hold, is not a tap */
     if (ui.mode == M_WRITE) {
         step_t *st = &seq.pat[seq.cur].s[ui.sound][i];
@@ -167,12 +345,18 @@ static void pad_up(int i, long long now) {
     } else if (ui.mode == M_PATT) {
         if (ui.centre) { seq.pat[i] = seq.pat[seq.cur]; changed(now); } /* Commit: a copy */
         else seq_cue(i);
-    }
+    } else if (ui.mode == M_SOUND && i == P_LOAD) pick_open();
 }
 
 /* ---- keys ---- */
 static void key(char what, int code, long long now) {
     int down = what == 'd';
+    if (pick.open && (code == KEY_CENTRE || code == KEY_RETURN)) { /* Return on the release, as below */
+        if (code == KEY_CENTRE && down) pick_choose(now);
+        else if (code == KEY_RETURN && !down) pick_back();
+        if (code == KEY_CENTRE) ui.centre = ui.centre_hold = 0; /* held when the picker opened: its release is here */
+        return;
+    }
     if (code == KEY_CENTRE) {
         if (down) ui.centre = 1, ui.centre_hold = 0, ui.centre_at = now, ui.turned = 0;
         else {
@@ -182,6 +366,7 @@ static void key(char what, int code, long long now) {
     } else if (code == KEY_RETURN) { /* on the release: a hold's never comes (the firmware's quit) */
         if (down) return;
         if (ui.mode == M_PATT && seq.chain[0] >= 0) seq.chain[0] = seq.chain[1] = -1;
+        else if (ui.mode == M_FX && !seq.ntake) seq.pat[seq.cur].nev = 0; /* nothing to undo: the bar's effects go */
         else seq_undo();
         changed(now);
     } else if (!down) return;
@@ -190,10 +375,14 @@ static void key(char what, int code, long long now) {
 }
 
 /* ---- the strip's tap targets ---- */
-static void strip_tap(int x) {
+static void strip_tap(int x, long long now) {
     if (x < 60) seq_play(!seq.playing);
     else if (x < 130) ui.wheel_to = ui.wheel_to == WT_BPM ? WT_MODE : WT_BPM;
-    else if (x < 290) { if (ui.mode == M_WRITE) ui.lock = (ui.lock + 1) % L_N; ui.wheel_to = WT_MODE; }
+    else if (x < 290) {
+        if (ui.mode == M_WRITE) ui.lock = (ui.lock + 1) % L_N;
+        else if (ui.mode == M_PATT && !ui.job) job_start(J_EXPORT, "Exporting", now);
+        ui.wheel_to = WT_MODE;
+    }
     else ui.wheel_to = ui.wheel_to == WT_VOL ? WT_MODE : WT_VOL;
 }
 
@@ -207,9 +396,12 @@ void ui_event(const event_t *e, long long now) {
         ui.touch_at = now;
         int p = pad_at(e->a, e->b), t = tab_at(e->a, e->b);
         if (e->what == 'd') {
-            if (p >= 0) pad_down(p, now);
-            else if (t >= 0) { ui.mode = t; ui.wheel_to = WT_MODE; ui.pad = -1; }
-            else if (e->b < STRIP) strip_tap(e->a);
+            if (pick.open && e->b >= STRIP && e->a < TAB_X) { /* a tap on a row picks it */
+                int shown = (e->b - STRIP) / ROW_H, row = pick.top + shown;
+                if (shown < PICK_ROWS && row < pick.n) pick.cur = row, pick_choose(now);
+            } else if (p >= 0) pad_down(p, now);
+            else if (t >= 0) { ui.mode = t; ui.wheel_to = WT_MODE; ui.pad = -1; pick.open = 0; }
+            else if (e->b < STRIP) strip_tap(e->a, now);
         } else if (e->what == 'u') { /* one finger: whatever was down lifts, wherever it lifts */
             if (ui.pad >= 0) pad_up(ui.pad, now);
             ui.pad = -1;
@@ -219,6 +411,8 @@ void ui_event(const event_t *e, long long now) {
 }
 
 void ui_tick(long long now) {
+    if (pick.scan) pick.scan = 0, pick_scan(), pick_move(pick.scan_cur);
+    if (ui.job && ui.job_shown) job_run(now);
     if (ui.centre && !ui.centre_hold && now - ui.centre_at >= HOLD_MS) ui.centre_hold = 1;
     if (ui.pad >= 0 && ui.mode == M_PATT && !ui.turned && !ui.centre && now - ui.pad_at >= HOLD_MS) {
         ui_lock(); /* a held pattern: chained with the current one (the panel has one finger) */
@@ -270,6 +464,9 @@ static void text(pix *c, int x, int y, const char *s, pix col, int big) {
         x += w;
     }
 }
+static void fit(char *s, int w, int big) { /* shortened from the end until it is at most w wide */
+    for (size_t n = strlen(s); n && text_w(s, big) > w; --n) s[n - 1] = 0;
+}
 static void text_in(pix *c, int x, int y, int w, int h, const char *s, pix col, int big) {
     text(c, x + (w - text_w(s, big)) / 2, y + (h - (big ? F20_H : F14_H)) / 2, s, col, big);
 }
@@ -290,28 +487,42 @@ static void pad_label(int i, char *out, size_t n, int *value) { /* the pad's tex
         snprintf(out, n, "%s", param_names[i]);
         *value = i != P_LOAD;
         break;
-    case M_FX: snprintf(out, n, "-"); break;
+    case M_FX: snprintf(out, n, "%s", fx_page[ui.fx_page][i] >= 0 ? fx_name(fx_page[ui.fx_page][i]) : "-"); break;
     case M_PATT: snprintf(out, n, "P%d", i + 1); break;
     }
 }
+static void pick_draw(pix *c) {
+    fill(c, 0, STRIP, TAB_X, H - STRIP, BG);
+    for (int r = 0; r < PICK_ROWS && pick.top + r < pick.n; ++r) {
+        int i = pick.top + r, y = STRIP + r * ROW_H;
+        char b[300];
+        if (i == pick.cur) fill(c, PAD_X, y, TAB_X - 2 * PAD_X, ROW_H - 2, mix(PADBG, pal[ui.sound], 140));
+        snprintf(b, sizeof b, pick.row[i].kind == 'k' ? "Kit: %s" : pick.row[i].kind == 'd' ? "%s/" : "%s", pick.row[i].name);
+        fit(b, TAB_X - 2 * PAD_X - 12, 0);
+        text(c, PAD_X + 6, y + (ROW_H - 2 - F14_H) / 2, b, pick.row[i].kind == 'k' && !strcmp(pick.row[i].name, kit_name) ? pal[4] : INK, 0);
+    }
+    if (!pick.n) text_in(c, 0, STRIP, TAB_X, H - STRIP, "Nothing to load here", DIM, 0);
+}
 static void strip(pix *c, long long now) {
-    (void)now;
     fill(c, 0, 0, W, STRIP, 0xff000000);
     /* play state: a triangle or a square */
     if (seq.playing) for (int r = 0; r < 12; ++r) fill(c, 14, 8 + r, r < 6 ? r * 2 : (11 - r) * 2, 1, INK);
     else fill(c, 14, 9, 10, 10, DIM);
     if (seq.rec) for (int r = 0; r < 10; ++r) { int d = r - 4, w = d * d < 20 ? 2 * (int)(4.5f + __builtin_sqrtf(20 - d * d) - 4.5f) : 0; fill(c, 40 - w / 2, 9 + r, w, 1, 0xffff3030); }
-    char b[32];
+    char b[48];
     snprintf(b, sizeof b, "%d", seq.bpm);
     text(c, 62, 3, b, ui.wheel_to == WT_BPM ? pal[0] : INK, 1);
     snprintf(b, sizeof b, "P%d%s", seq.cur + 1, seq.cue >= 0 ? ">" : "");
     if (seq.cue >= 0) snprintf(b + strlen(b), sizeof b - strlen(b), "%d", seq.cue + 1);
     text(c, 108, 3, b, DIM, 1);
+    int name_x = 108 + text_w(b, 1) + 8 > 150 ? 108 + text_w(b, 1) + 8 : 150; /* a cue is wider */
     /* the wheel's name and value */
     const char *name = ""; int val = 0, show = 1;
     if (ui.centre_hold) name = ui.mode == M_PATT ? "Swing" : "Volume", val = ui.mode == M_PATT ? seq.swing : ui.vol;
     else if (ui.wheel_to == WT_VOL) name = "Volume", val = ui.vol;
     else if (ui.wheel_to == WT_BPM) name = "BPM", val = seq.bpm;
+    else if (pick.open) name = "Load", show = 0;
+    else if (ui.mode == M_FX) name = "Page", val = ui.fx_page + 1;
     else if (ui.mode == M_PLAY && ui.pad >= 0) name = "Pitch", val = sounds[ui.pad].p[P_PITCH];
     else if (ui.mode == M_PLAY) name = "Sweep", show = 0;
     else if (ui.mode == M_SOUND) name = param_names[ui.pad >= 0 ? ui.pad : ui.tile], val = sounds[ui.sound].p[ui.pad >= 0 ? ui.pad : ui.tile], show = (ui.pad >= 0 ? ui.pad : ui.tile) != P_LOAD;
@@ -325,8 +536,11 @@ static void strip(pix *c, long long now) {
         } else val = lock_param[ui.lock] >= 0 ? sounds[ui.sound].p[lock_param[ui.lock]] : seq.pat[seq.cur].len[ui.sound];
         if (ui.lock == L_NUDGE && ui.pad < 0) name = "Length";
     } else if (ui.mode == M_PATT) name = "BPM", val = seq.bpm;
-    if (show) snprintf(b, sizeof b, "%s %d", name, val); else snprintf(b, sizeof b, "%s", name);
-    text(c, 150, 3, b, ui.centre_hold || ui.pad >= 0 ? pal[ui.sound] : INK, 1);
+    if (now < ui.msg_until) snprintf(b, sizeof b, "%s", ui.msg), show = -1;
+    else if (show) snprintf(b, sizeof b, "%s %d", name, val);
+    else snprintf(b, sizeof b, "%s", name);
+    if (show < 0) fit(b, TAB_X - name_x, 1);
+    text(c, name_x, 3, b, ui.centre_hold || ui.pad >= 0 ? pal[ui.sound] : INK, 1);
     /* the meter and the volume chip */
     int pk = engine_peak() * 40 / 32767;
     fill(c, 300, 11, 40, 6, PADBG);
@@ -356,6 +570,10 @@ void ui_render(pix *c, long long now) {
             else if (!in) ink = DIM;
         } else if (ui.mode == M_SOUND) {
             if (i == ui.tile) col = mix(PADBG, pal[ui.sound], 110);
+        } else if (ui.mode == M_FX) {
+            int f = fx_page[ui.fx_page][i];
+            if (f < 0) ink = DIM;
+            else if (f == fx_sounding()) col = mix(PADBG, pal[i], 200), ink = 0xff000000;
         } else if (ui.mode == M_PATT) {
             if (i == seq.cur) col = mix(PADBG, pal[i], 160), ink = 0xff000000;
             if (i == seq.chain[0] || i == seq.chain[1]) frame(c, x - 2, y - 2, PAD + 4, PAD + 4, 2, pal[i]);
@@ -377,13 +595,26 @@ void ui_render(pix *c, long long now) {
             text_in(c, x, y + 32, PAD, F20_H, v, ink, 1);
         } else if (ui.mode == M_WRITE || ui.mode == M_PATT)
             text_in(c, x, y, PAD, PAD, label, ink, 1);
-        else
-            text_in(c, x, y, PAD, PAD, label, ink, 0);
+        else { /* two words too wide for the pad take a line each */
+            char *sp = strpbrk(label, " -"), second[32];
+            if (sp && text_w(label, 0) > PAD + 2) {
+                snprintf(second, sizeof second, "%s", sp + 1);
+                sp[*sp == '-'] = 0; /* a hyphen stays on the first line */
+                fit(label, PAD + 2, 0), fit(second, PAD + 2, 0);
+                text_in(c, x, y + PAD / 2 - F14_H, PAD, F14_H, label, ink, 0);
+                text_in(c, x, y + PAD / 2, PAD, F14_H, second, ink, 0);
+            } else {
+                fit(label, PAD + 2, 0);
+                text_in(c, x, y, PAD, PAD, label, ink, 0);
+            }
+        }
     }
+    if (pick.open) pick_draw(c);
     for (int m = 0; m < M_N; ++m) {
         int y = STRIP + m * TAB_H;
         fill(c, TAB_X, y, TAB_W, TAB_H - 2, m == ui.mode ? mix(PADBG, pal[ui.sound], 140) : 0xff1a1a1a);
         text_in(c, TAB_X, y, TAB_W, TAB_H - 2, mode_names[m], m == ui.mode ? 0xff000000 : DIM, 0);
     }
     strip(c, now);
+    if (ui.job) ui.job_shown = 1; /* the strip says it: now the job may stop the screen */
 }

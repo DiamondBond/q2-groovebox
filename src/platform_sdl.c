@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include "engine.h"
 #include "platform.h"
 
@@ -26,6 +27,7 @@ static char shot[64];
 
 long long plat_ms(void) { return script ? fake_now : (long long)SDL_GetTicks64(); }
 const char *plat_dir(void) { return dir; }
+const char *plat_media(void) { const char *m = getenv("GROOVEBOX_MEDIA"); return m ? m : "."; }
 int plat_start_gain(void) { return 65536; }
 int plat_underruns(void) { return 0; }
 
@@ -38,6 +40,7 @@ int plat_open(int argc, char **argv) {
             script = fopen(argv[i + 1], "r");
             snprintf(outdir, sizeof outdir, "%s", argv[i + 2]);
             if (!script) return 0;
+            mkdir(outdir, 0755);
         }
     if (script) return 1;
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO)) return 0;

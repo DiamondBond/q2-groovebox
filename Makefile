@@ -5,13 +5,16 @@ CC_Q2 = clang --target=mipsel-linux-gnu --sysroot=$(SYSROOT) -march=mips32r2 -ma
 CFLAGS = -std=gnu11 -O2 -Wall -Wextra -Werror -Wno-unused-parameter -fno-strict-aliasing
 LDFLAGS_Q2 = -m elf32ltsmip -e __start --dynamic-linker /lib/ld-linux-mipsn8.so.1 --image-base=0x400000 -z noexecstack \
              --hash-style=sysv --build-id=none -s
-SRC = src/main.c src/ui.c src/engine.c src/seq.c src/wav.c src/project.c
+SRC = src/main.c src/ui.c src/engine.c src/seq.c src/wav.c src/project.c src/load.c src/fx.c
 Q2_SRC = $(SRC) src/platform_q2.c src/audio.c src/crt-q2.c
 HOST_SRC = $(SRC) src/platform_sdl.c
 DIST = dist/.groovebox
 
-all: $(DIST)/q2-groovebox $(DIST)/q2app $(DIST)/kits/default dist/groovebox.zip
+KITS = dist/kits.stamp
 
+all: $(DIST)/q2-groovebox $(DIST)/q2app $(KITS) dist/groovebox.zip
+
+build/q2/fx.o: src/punch.c src/sloop_buses.c
 build/q2/%.o: src/%.c src/*.h
 	@mkdir -p build/q2
 	$(CC_Q2) $(CFLAGS) -c $< -o $@
@@ -22,11 +25,12 @@ $(DIST)/q2-groovebox: $(Q2_SRC:src/%.c=build/q2/%.o)
 $(DIST)/q2app: q2app
 	@mkdir -p $(DIST)
 	cp $< $@
-$(DIST)/kits/default: kits/default/*.wav
-	@mkdir -p $@
-	cp kits/default/*.wav $@/
+$(KITS): kits/* kits/*/*.wav
+	@mkdir -p $(DIST)
+	rm -rf $(DIST)/kits
+	cp -r kits $(DIST)/kits
 	@touch $@
-dist/groovebox.zip: $(DIST)/q2-groovebox $(DIST)/q2app $(DIST)/kits/default
+dist/groovebox.zip: $(DIST)/q2-groovebox $(DIST)/q2app $(KITS)
 	cd dist && rm -f groovebox.zip && zip -qr groovebox.zip .groovebox
 	@ls -l $@
 
@@ -40,8 +44,9 @@ check: build/host/check
 	./build/host/check
 build/host/check: src/check.c src/*.c src/*.h
 	@mkdir -p build/host
+	cc -std=gnu11 -O1 -g -Wall -fsanitize=address,undefined -fno-sanitize=shift-base -c -o build/host/fx.o src/fx.c
 	cc -std=gnu11 -O1 -g -Wall -Wno-unused-function -Wno-unused-parameter $(shell pkg-config --cflags sdl2) -fsanitize=address,undefined \
-	    -o $@ src/check.c $(shell pkg-config --libs sdl2) -lm -lpthread
+	    -o $@ src/check.c build/host/fx.o $(shell pkg-config --libs sdl2) -lm -lpthread
 
 clean:
 	rm -rf build dist

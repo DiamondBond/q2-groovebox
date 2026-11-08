@@ -2,7 +2,9 @@
  * Copyright (C) 2026 Diamond Bond
  * Groovebox for the Shanling Q2: the loop. The audio thread renders in CTL-frame blocks under the
  * UI's lock; the UI thread waits on input, draws at 60 fps while touched or playing and 30 idle,
- * autosaves two seconds after a change and saves on the way out. */
+ * autosaves two seconds after a change and saves on the way out. Slow work (a decode, a kit, an
+ * export) runs in ui_tick on this thread, off the lock, so the sound carries on; only an export
+ * silences it, having the engine to itself. */
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -18,6 +20,11 @@ static char project_dir[300];
 static void render(short *out, int frames) {
     int acc[CTL * 2];
     ui_lock();
+    if (engine_is_offline()) { /* an export owns the engine */
+        ui_unlock();
+        memset(out, 0, (size_t)frames * 4);
+        return;
+    }
     for (int f = 0; f < frames; f += CTL) {
         seq_block();
         engine_block(acc);
@@ -31,14 +38,13 @@ int main(int argc, char **argv) {
     engine_init();
     seq_init();
     ui_init();
-    char kit[300];
-    snprintf(kit, sizeof kit, "%s/kits/default", plat_dir());
-    kit_load(kit);
     snprintf(project_dir, sizeof project_dir, "%s/projects", plat_dir());
     mkdir(project_dir, 0755);
-    snprintf(project_dir, sizeof project_dir, "%s/projects/1", plat_dir());
+    snprintf(project_dir, sizeof project_dir, "%s", project_path());
     mkdir(project_dir, 0755);
     project_load(project_dir);
+    kit_open(kit_name);
+    pads_restore(project_dir);
     if (!plat_audio_start(render)) fprintf(stderr, "groovebox: no audio\n");
     long long next = plat_ms(), dirty_since = 0;
     while (!ui_quit()) {

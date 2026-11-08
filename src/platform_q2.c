@@ -36,6 +36,7 @@ long long plat_ms(void) {
     return (long long)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
 }
 const char *plat_dir(void) { return dir; }
+const char *plat_media(void) { return "/mnt/mmc"; }
 int plat_start_gain(void) { return start_gain; }
 
 int plat_open(int argc, char **argv) {

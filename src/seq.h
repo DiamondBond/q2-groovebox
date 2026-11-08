@@ -19,7 +19,7 @@ typedef struct {
     int playing, rec;
     int pos;          /* frames into the bar */
     unsigned bar;     /* bars since play began */
-    struct { signed char pad, step; } take[256];
+    struct { signed char pat, pad, step; } take[256];
     int ntake; /* the steps this REC pass wrote, for Return's undo */
 } seq_t;
 extern seq_t seq;

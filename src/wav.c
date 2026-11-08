@@ -14,6 +14,7 @@ static unsigned le(const unsigned char *p, int n) {
     return v;
 }
 #define WAV_MAX (40 * 1024 * 1024) /* ponytail: a sound is seconds long; this stops a 2 GB file */
+#define OUT_MAX (FS * 60)          /* a minute at FS: 5 MB a pad, 16 pads well within the Q2's memory */
 int wav_read(const char *path, short **pcm) {
     *pcm = 0;
     FILE *f = fopen(path, "rb");
@@ -39,8 +40,9 @@ int wav_read(const char *path, short **pcm) {
     if ((fmt != 1 && fmt != 0xfffe) || !ch || !rate || (bits != 8 && bits != 16 && bits != 24) || !dlen)
         return free(b), 0;
     unsigned bps = bits / 8, frames = dlen / (bps * ch);
-    unsigned out_n = (unsigned)((unsigned long long)frames * FS / rate);
-    if (out_n < 2) return free(b), 0;
+    unsigned long long out_ll = (unsigned long long)frames * FS / rate;
+    if (out_ll < 2 || out_ll > OUT_MAX) return free(b), 0;
+    unsigned out_n = (unsigned)out_ll;
     short *out = malloc(out_n * sizeof *out);
     if (!out) return free(b), 0;
     for (unsigned i = 0; i < out_n; ++i) {
@@ -58,7 +60,7 @@ int wav_read(const char *path, short **pcm) {
             }
             s[k] = (int)(sum / (long)ch);
         }
-        out[i] = (short)(s[0] + (((s[1] - s[0]) * (int)frac) >> 16));
+        out[i] = (short)(s[0] + (int)(((long long)(s[1] - s[0]) * (int)frac) >> 16));
     }
     free(b);
     *pcm = out;

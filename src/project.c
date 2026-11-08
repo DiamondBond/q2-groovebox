@@ -4,6 +4,7 @@
  * characters a track, and a locked step's values. Written whole to .new and renamed, as the card
  * can drop out mid-write. The kit's WAVs are named by pad number. */
 #include <dirent.h>
+#include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -72,7 +73,7 @@ int project_save(const char *dir) {
                             st->cutoff, st->nudge);
             }
         }
-    int ok = fflush(f) == 0 && fclose(f) == 0;
+    int ok = fflush(f) == 0 && fsync(fileno(f)) == 0 && fclose(f) == 0; /* the card can drop out */
     return ok && rename(tmp, path) == 0;
 }
 
@@ -91,7 +92,8 @@ int project_load(const char *dir) {
         else if (!strcmp(k, "swing")) { a = atoi(v); seq.swing = a < 0 ? 0 : a > 100 ? 100 : a; }
         else if (!strcmp(k, "pattern")) { a = atoi(v); seq.cur = a < 0 || a >= NPATT ? 0 : a; }
         else if (sscanf(k, "pad%d.", &a) == 1 && a >= 1 && a <= NPAD) {
-            const char *key = strchr(k, '.') + 1;
+            const char *key = strchr(k, '.');
+            if (!key++) continue;
             for (int i = 0; i < P_LOAD; ++i)
                 if (!strcmp(key, keys[i])) {
                     int x = atoi(v);

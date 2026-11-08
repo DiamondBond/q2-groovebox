@@ -40,7 +40,7 @@ static struct {
     int vol;            /* 0..100, the soft volume */
     int acc;            /* wheel units since the last detent */
     int pad;            /* the pad under the finger, -1 */
-    int pad2;           /* a second pad down (PATT's chain), -1 */
+    long long pad_at;   /* when it went down (PATT: held HOLD_MS, it chains) */
     int turned;         /* the wheel moved during this pad or Centre hold */
     int centre, centre_hold; /* Centre down; became a hold */
     long long centre_at, touch_at, last_input, dirty_at;
@@ -63,7 +63,8 @@ void ui_init(void) {
     memset(&ui, 0, sizeof ui);
     pthread_mutex_init(&ui.lock_m, 0);
     ui.vol = 100;
-    ui.pad = ui.pad2 = -1;
+    ui.pad = -1;
+    ui.last_input = ui.touch_at = plat_ms(); /* the idle clock: CLOCK_MONOTONIC is since boot */
     engine_gain(plat_start_gain());
 }
 
@@ -143,15 +144,9 @@ static void wheel(int d, long long now) {
 
 /* ---- pads ---- */
 static void pad_down(int i, long long now) {
-    if (ui.pad >= 0 && ui.mode == M_PATT && ui.pad2 < 0 && i != ui.pad) { /* two held: a chain */
-        ui.pad2 = i;
-        seq.chain[0] = ui.pad, seq.chain[1] = i;
-        if (!seq.playing) seq.cur = ui.pad;
-        changed(now);
-        return;
-    }
     if (ui.pad >= 0) return;
     ui.pad = i;
+    ui.pad_at = now;
     ui.turned = 0;
     if (ui.centre) ui.centre_hold = 1;
     if (ui.mode == M_PLAY) {
@@ -161,10 +156,9 @@ static void pad_down(int i, long long now) {
         ui.tile = i;
 }
 static void pad_up(int i, long long now) {
-    if (i == ui.pad2) { ui.pad2 = -1; return; }
     if (i != ui.pad) return;
     ui.pad = -1;
-    if (ui.turned || ui.pad2 >= 0) { ui.pad2 = -1; return; } /* a turn is not a tap */
+    if (ui.turned) return; /* a turn, or PATT's hold, is not a tap */
     if (ui.mode == M_WRITE) {
         step_t *st = &seq.pat[seq.cur].s[ui.sound][i];
         st->on = !st->on;
@@ -185,14 +179,14 @@ static void key(char what, int code, long long now) {
             if (ui.centre && !ui.centre_hold) seq_rec(!seq.rec), seq.ntake = 0;
             ui.centre = ui.centre_hold = 0;
         }
-    } else if (!down) return;
-    else if (code == KEY_PLAY) seq_play(!seq.playing);
-    else if (code == KEY_PREV || code == KEY_NEXT) seq_cue((seq.cue >= 0 ? seq.cue : seq.cur) + (code == KEY_NEXT ? 1 : -1));
-    else if (code == KEY_RETURN) {
+    } else if (code == KEY_RETURN) { /* on the release: a hold's never comes (the firmware's quit) */
+        if (down) return;
         if (ui.mode == M_PATT && seq.chain[0] >= 0) seq.chain[0] = seq.chain[1] = -1;
         else seq_undo();
         changed(now);
-    }
+    } else if (!down) return;
+    else if (code == KEY_PLAY) seq_play(!seq.playing);
+    else if (code == KEY_PREV || code == KEY_NEXT) seq_cue((seq.cue >= 0 ? seq.cue : seq.cur) + (code == KEY_NEXT ? 1 : -1));
 }
 
 /* ---- the strip's tap targets ---- */
@@ -214,12 +208,11 @@ void ui_event(const event_t *e, long long now) {
         int p = pad_at(e->a, e->b), t = tab_at(e->a, e->b);
         if (e->what == 'd') {
             if (p >= 0) pad_down(p, now);
-            else if (t >= 0) { ui.mode = t; ui.wheel_to = WT_MODE; ui.pad = ui.pad2 = -1; }
+            else if (t >= 0) { ui.mode = t; ui.wheel_to = WT_MODE; ui.pad = -1; }
             else if (e->b < STRIP) strip_tap(e->a);
-        } else if (e->what == 'u') {
-            if (ui.pad2 >= 0 && (p < 0 || p == ui.pad2)) pad_up(ui.pad2, now);
-            if (ui.pad >= 0 && (p < 0 || p == ui.pad || ui.pad2 < 0)) pad_up(ui.pad, now);
-            ui.pad = ui.pad2 = -1; /* one finger: everything lifts */
+        } else if (e->what == 'u') { /* one finger: whatever was down lifts, wherever it lifts */
+            if (ui.pad >= 0) pad_up(ui.pad, now);
+            ui.pad = -1;
         }
     }
     ui_unlock();
@@ -227,6 +220,15 @@ void ui_event(const event_t *e, long long now) {
 
 void ui_tick(long long now) {
     if (ui.centre && !ui.centre_hold && now - ui.centre_at >= HOLD_MS) ui.centre_hold = 1;
+    if (ui.pad >= 0 && ui.mode == M_PATT && !ui.turned && !ui.centre && now - ui.pad_at >= HOLD_MS) {
+        ui_lock(); /* a held pattern: chained with the current one (the panel has one finger) */
+        seq.chain[0] = seq.cur == ui.pad ? seq.chain[0] >= 0 && seq.chain[0] != ui.pad ? seq.chain[0] : seq.cur : seq.cur;
+        seq.chain[1] = ui.pad;
+        if (seq.chain[0] == seq.chain[1]) seq.chain[0] = seq.chain[1] = -1;
+        ui.turned = 1;
+        changed(now);
+        ui_unlock();
+    }
     if (!seq.playing && now - ui.last_input > IDLE_QUIT_MS) ui.quit = 1;
 }
 
@@ -352,16 +354,20 @@ void ui_render(pix *c, long long now) {
             int in = i < seq.pat[seq.cur].len[ui.sound];
             if (st->on) col = mix(PADBG, pal[ui.sound], in ? 200 : 70), ink = in ? 0xff000000 : DIM;
             else if (!in) ink = DIM;
-            if (st->on && (st->level != UNSET || st->pitch != UNSET || st->decay != UNSET || st->cutoff != UNSET || st->nudge)) fill(c, x + PAD - 10, y + 4, 6, 6, INK);
         } else if (ui.mode == M_SOUND) {
             if (i == ui.tile) col = mix(PADBG, pal[ui.sound], 110);
         } else if (ui.mode == M_PATT) {
             if (i == seq.cur) col = mix(PADBG, pal[i], 160), ink = 0xff000000;
             if (i == seq.chain[0] || i == seq.chain[1]) frame(c, x - 2, y - 2, PAD + 4, PAD + 4, 2, pal[i]);
         } else ink = DIM;
-        if (i == ui.pad || i == ui.pad2) col = mix(col, 0xffffffff, 60);
+        if (i == ui.pad) col = mix(col, 0xffffffff, 60);
         fill(c, x, y, PAD, PAD, col);
-        if (ui.mode == M_WRITE && i == head) frame(c, x, y, PAD, PAD, 3, INK);
+        if (ui.mode == M_WRITE) { /* the playhead's frame, a locked step's dot */
+            const step_t *st = &seq.pat[seq.cur].s[ui.sound][i];
+            if (i == head) frame(c, x, y, PAD, PAD, 3, INK);
+            if (st->on && (st->level != UNSET || st->pitch != UNSET || st->decay != UNSET || st->cutoff != UNSET || st->nudge))
+                fill(c, x + PAD - 10, y + 4, 6, 6, INK);
+        }
         if (ui.mode == M_PATT && i == seq.cue) frame(c, x, y, PAD, PAD, 2, INK);
         if (has_value) {
             char v[16];

@@ -43,7 +43,7 @@ Pad 1 is bottom-left. The pads stay where they are; the mode says what they mean
 | WRITE | the selected sound's sixteen steps | toggle the step | lock the strip's parameter on that step (tap the name to cycle Level, Pitch, Decay, Cutoff, Nudge) | that parameter for the whole track; Nudge's wheel is the track length |
 | SOUND | the sound's sixteen parameters | select | turn it | the selected one |
 | FX | punch-in effects | coming | | |
-| PATT | sixteen patterns | cue it for the next bar; hold two to chain them | | tempo |
+| PATT | sixteen patterns | cue it for the next bar | hold one to chain it with the current pattern (Return releases the chain) | tempo |
 
 Projects live in `.groovebox/projects/` on the card and survive an update; Remove deletes them.
 

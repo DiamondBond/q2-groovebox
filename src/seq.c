@@ -85,17 +85,19 @@ void seq_tap(int pad) {
     int idx = (int)((seq.bar * NSTEP + (unsigned)n) % p->len[pad]);
     step_t *st = &p->s[pad][idx];
     if (!st->on && seq.ntake < (int)(sizeof seq.take / sizeof *seq.take)) {
+        seq.take[seq.ntake].pat = (signed char)seq.cur;
         seq.take[seq.ntake].pad = (signed char)pad;
         seq.take[seq.ntake].step = (signed char)idx;
         ++seq.ntake;
     }
     st->on = 1;
-    if (n * stepf <= seq.pos) engine_trigger(pad, UNSET, UNSET, UNSET, UNSET); /* its onset has passed */
+    if (n >= NSTEP || onset(n, stepf, st->nudge) <= seq.pos) /* its onset has passed: sound it now */
+        engine_trigger(pad, UNSET, UNSET, UNSET, UNSET);
 }
 void seq_undo(void) {
     while (seq.ntake > 0) {
         --seq.ntake;
-        seq.pat[seq.cur].s[(int)seq.take[seq.ntake].pad][(int)seq.take[seq.ntake].step].on = 0;
+        seq.pat[(int)seq.take[seq.ntake].pat].s[(int)seq.take[seq.ntake].pad][(int)seq.take[seq.ntake].step].on = 0;
     }
 }
 int seq_playhead(void) {

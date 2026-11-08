@@ -36,6 +36,7 @@ static void count_hits(void) { /* a one-step pattern on pad 3 fires once a bar *
 }
 
 int main(void) {
+    script = tmpfile(); /* platform_sdl's replay clock: plat_ms() is fake_now */
     /* a sixteenth at 120 is 5512 frames; quantise rounds to the nearest step */
     seq_init();
     assert(seq_step_frames() == 5512);
@@ -108,7 +109,38 @@ int main(void) {
     w.a = 13; k.what = 'd'; ui_event(&k, 700); ui_event(&w, 710); k.what = 'u'; ui_event(&k, 720); assert(ui.vol == 95 && seq.rec == 1);
     /* Return undoes the take; Prev/Next cue; idle quits after 5 minutes stopped */
     k = (event_t){ 'k', 'd', KEY_NEXT, 0 }; ui_event(&k, 800); assert(seq.cur == 1);
-    ui_tick(800 + IDLE_QUIT_MS + 1); assert(ui_quit());
+    seq_rec(1); seq_tap(1); k = (event_t){ 'k', 'd', KEY_RETURN, 0 }; ui_event(&k, 810); k.what = 'u'; ui_event(&k, 820);
+    ui_tick(820 + IDLE_QUIT_MS + 1); assert(ui_quit());
+    /* the review's cases: the idle clock starts at the app's start, not the device's boot */
+    seq_init(); engine_init(); fake_now = 3600 * 1000; ui_init(); ui_tick(3600 * 1000 + 1000); assert(!ui_quit()); fake_now = 0;
+    /* Start 127 with Loop on: the voice keeps to the sample (ASan watches); a sample past 65535 frames plays whole */
+    engine_init(); static short big[70560]; for (int i = 0; i < 70560; ++i) big[i] = (short)(i & 1 ? 3000 : -3000);
+    sounds[0].smp.pcm = big; sounds[0].smp.n = 70560; sounds[0].p[P_START] = 127; sounds[0].p[P_LOOP] = 1;
+    engine_trigger(0, UNSET, UNSET, UNSET, UNSET); for (int b = 0; b < 200; ++b) engine_block(acc); assert(voices[0].on);
+    sounds[0].p[P_START] = 0; sounds[0].p[P_LOOP] = 0; engine_trigger(0, UNSET, UNSET, UNSET, UNSET);
+    int blocks_on = 0; for (int b = 0; b < 3000 && voices[0].on; ++b) engine_block(acc), ++blocks_on;
+    assert(blocks_on >= 70560 / CTL - 1 && blocks_on <= 70560 / CTL + 1);
+    /* an attack rises to full, then the decay falls: the voice ends, and not on its first frame */
+    sounds[0].p[P_ATTACK] = 60; sounds[0].p[P_DECAY] = 40; sounds[0].p[P_LOOP] = 1; engine_trigger(0, UNSET, UNSET, UNSET, UNSET);
+    int peak_b = 0, pk = 0; blocks_on = 0;
+    for (int b = 0; b < 20000 && voices[0].on; ++b) { engine_block(acc); ++blocks_on; if (engine_peak() > pk) pk = engine_peak(), peak_b = b; }
+    assert(blocks_on > 100 && !voices[0].on && pk > 800 && peak_b > 10); /* 3000 x level 100's 0.31 a side */
+    /* a pitch lock is the pitch itself: +5 on the sound, a lock of 6 plays 6 semitones */
+    sounds[0].p[P_ATTACK] = 0; sounds[0].p[P_DECAY] = 127; sounds[0].p[P_LOOP] = 0; sounds[0].p[P_PITCH] = 5;
+    engine_trigger(0, UNSET, 6, UNSET, UNSET); assert(voices[0].inc == (int)(65536 * exp2f(6 / 12.0f)));
+    /* undo clears the take in the pattern it was recorded in, after a cue moved on */
+    seq_init(); engine_init(); seq_play(1); seq_rec(1); sounds[0].smp.pcm = click; sounds[0].smp.n = 100;
+    seq.pos = 100; seq_tap(0); assert(seq.pat[0].s[0][0].on); seq_cue(2); for (int f = 0; f < 5512 * NSTEP; f += CTL) seq_block();
+    assert(seq.cur == 2); seq_undo(); assert(!seq.pat[0].s[0][0].on);
+    /* a REC tap just past an odd step's straight grid, with swing, waits for the swung onset: one hit */
+    seq_init(); engine_init(); seq_play(1); seq_rec(1); seq.swing = 100; sounds[0].smp.pcm = click; sounds[0].smp.n = 100;
+    seq.pos = 5512 + 100; seq_tap(0); assert(seq.pat[0].s[0][1].on && !voices[0].on);
+    for (int f = 5512 + 100; f < 5512 * 2; f += CTL) { seq.pos = f; seq_block(); } assert(voices[0].on);
+    /* PATT: a held pattern chains with the current one; Return releases it */
+    seq_init(); engine_init(); ui_init(); ui.mode = M_PATT;
+    e = (event_t){ 't', 'd', PAD_X + 5 + 72, STRIP + 3 * 72 + 5 }; ui_event(&e, 10); ui_tick(10 + HOLD_MS); e.what = 'u'; ui_event(&e, 400);
+    assert(seq.chain[0] == 0 && seq.chain[1] == 1 && seq.cur == 0);
+    k = (event_t){ 'k', 'd', KEY_RETURN, 0 }; ui_event(&k, 500); assert(seq.chain[0] == 0); k.what = 'u'; ui_event(&k, 550); assert(seq.chain[0] == -1 && seq.chain[1] == -1);
     puts("check: ok");
     return 0;
 }

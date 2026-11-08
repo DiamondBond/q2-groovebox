@@ -78,7 +78,7 @@ int plat_wait(int ms, event_t *e) {
     memset(e, 0, sizeof *e);
     if (quit) return e->kind = 'q', 1;
     struct pollfd p = { sock, POLLIN, 0 };
-    if (sock < 0 || poll(&p, 1, ms) <= 0) return quit ? (e->kind = 'q', 1) : 0;
+    if (poll(&p, sock >= 0, ms) <= 0) return quit ? (e->kind = 'q', 1) : 0; /* no socket: just the wait */
     char msg[64];
     long n = recv(sock, msg, sizeof msg - 1, MSG_DONTWAIT);
     if (n <= 0) return 0;

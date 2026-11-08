@@ -19,7 +19,7 @@ const int param_def[P_N] = { 100, 0, 0, 0, 0, 127, 0, 0, 0, 127, 127, 0, 0, 0, 0
 
 typedef struct {
     int on, pad;
-    unsigned pos, end, start; /* 16.16 frames into the sample */
+    unsigned long long pos, end, start; /* 16.16 frames into the sample, wide enough past 65535 frames */
     int inc, loop, reverse, gl, gr; /* gains Q15 */
     float env, att_step, dec_k;     /* attack adds, decay multiplies, per frame */
     float f, q, lp, bp;             /* the voice's filter */
@@ -75,14 +75,14 @@ void engine_trigger(int pad, int level, int pitch, int decay, int cutoff) {
             if (i != pad && voices[i].on && sounds[i].p[P_CHOKE] == s->p[P_CHOKE]) voices[i].on = 0;
     voice_t *v = &voices[pad];
     int lv = level == UNSET ? s->p[P_LEVEL] : level;
-    int semis = (pitch == UNSET ? 0 : pitch) + s->p[P_PITCH];
+    int semis = pitch == UNSET ? s->p[P_PITCH] : pitch; /* a lock is the pitch itself, as WRITE shows it */
     int dec = decay == UNSET ? s->p[P_DECAY] : decay, cut = cutoff == UNSET ? s->p[P_CUTOFF] : cutoff;
     unsigned n = (unsigned)s->smp.n;
     v->pad = pad;
-    v->start = (unsigned)((unsigned long long)n * (unsigned)s->p[P_START] / 127) << 16;
-    v->end = (unsigned)((unsigned long long)n * (unsigned)s->p[P_END] / 127) << 16;
-    if (v->end <= v->start + (2u << 16)) v->end = v->start + (2u << 16);
-    if (v->end > (n - 1) << 16) v->end = (n - 1) << 16;
+    v->start = ((unsigned long long)n * (unsigned)s->p[P_START] / 127) << 16;
+    v->end = ((unsigned long long)n * (unsigned)s->p[P_END] / 127) << 16;
+    if (v->end > (unsigned long long)(n - 1) << 16) v->end = (unsigned long long)(n - 1) << 16;
+    if (v->start + (1ull << 16) >= v->end) v->start = v->end - (1ull << 16); /* at least a frame */
     v->pos = v->start;
     v->inc = (int)(65536 * exp2f((semis + s->p[P_FINE] * 0.01f) / 12));
     v->loop = s->p[P_LOOP];
@@ -92,7 +92,7 @@ void engine_trigger(int pad, int level, int pitch, int decay, int cutoff) {
     v->gr = amp * (64 + pan) / 127;
     int att = s->p[P_ATTACK];
     float att_s = att * att * (1.0f / (127 * 127)); /* up to a second */
-    v->att_step = att_s > 0 ? 1 / (att_s * FS) : 2;
+    v->att_step = att_s > 0 ? 1 / (att_s * FS) : 2; /* 2: no attack left */
     v->env = att ? 0 : 1;
     float dec_s = dec * dec * (4.0f / (127 * 127)); /* up to four seconds; 127 is the sample's own */
     v->dec_k = dec >= 127 ? 1 : expf(-1 / (dec_s * FS + 1));
@@ -109,14 +109,17 @@ static void voice_block(voice_t *v, int *acc) {
     for (int i = 0; i < CTL; ++i) {
         if (v->pos >= v->end) {
             if (!v->loop) { v->on = 0; return; }
-            v->pos = v->start + (v->pos - v->end);
+            v->pos = v->start + (v->pos - v->end) % (v->end - v->start);
         }
-        unsigned idx = v->pos >> 16, frac = v->pos & 0xffff;
+        unsigned idx = (unsigned)(v->pos >> 16), frac = (unsigned)(v->pos & 0xffff);
         unsigned i0 = v->reverse ? n - 1 - idx : idx, i1 = v->reverse ? (i0 ? i0 - 1 : 0) : i0 + 1;
         int s0 = pcm[i0], s1 = pcm[i1 < n ? i1 : n - 1];
-        float s = (float)(s0 + (((s1 - s0) * (int)frac) >> 16));
-        if (v->env < 1 && v->att_step < 2) { v->env += v->att_step; if (v->env > 1) v->env = 1; }
-        else v->env *= v->dec_k;
+        float s = (float)(s0 + (int)(((long long)(s1 - s0) * (int)frac) >> 16));
+        if (v->att_step < 2) { /* the attack, then the decay */
+            v->env += v->att_step;
+            if (v->env >= 1) v->env = 1, v->att_step = 2;
+        } else
+            v->env *= v->dec_k;
         s *= v->env;
         if (v->f > 0) { /* Chamberlin: low-pass out */
             v->lp += v->f * v->bp;
@@ -125,10 +128,10 @@ static void voice_block(voice_t *v, int *acc) {
             s = v->lp;
         }
         int si = (int)s;
-        acc[2 * i] += si * v->gl >> 15;
-        acc[2 * i + 1] += si * v->gr >> 15;
+        acc[2 * i] += (int)((long long)si * v->gl >> 15); /* a resonant peak can top full scale */
+        acc[2 * i + 1] += (int)((long long)si * v->gr >> 15);
         v->pos += (unsigned)v->inc;
-        if (v->env < 0.0005f && v->dec_k < 1) { v->on = 0; return; }
+        if (v->att_step >= 2 && v->env < 0.0005f && v->dec_k < 1) { v->on = 0; return; }
     }
 }
 

@@ -37,6 +37,7 @@ void engine_release(int pad);
 void engine_break_step(int pad, int step, unsigned bar, int frames, int on, int level, int decay, int cutoff); /* each sixteenth */
 void engine_transport_stop(void);
 void engine_load(int percent);          /* how much of its time the audio thread is using */
+int engine_load_now(void);              /* that, smoothed */
 void engine_block(int *out); /* CTL frames, interleaved Q15 in int, mixed, swept, limited */
 void engine_gain(int q16);   /* the master soft volume, 65536 unity */
 void engine_sweep(int v);    /* the Pads wheel: -100 (low-pass closed) .. 0 (off) .. 100 (high-pass) */

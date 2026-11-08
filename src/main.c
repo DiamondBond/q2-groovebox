@@ -5,16 +5,20 @@
  * autosaves two seconds after a change and saves on the way out. Slow work (a decode, a kit, an
  * export) runs in ui_tick on this thread, off the lock, so the sound carries on; only an export
  * silences it, having the engine to itself. */
+#include <pthread.h>
+#include <sched.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <time.h>
+#include <unistd.h>
 #include "engine.h"
 #include "platform.h"
 #include "project.h"
 #include "seq.h"
 #include "ui.h"
 
+#define FREEZE_MS 8000u /* longer than a card's worst fsync */
 static pix canvas[W * H];
 static char project_dir[300];
 
@@ -37,8 +41,27 @@ static void render(short *out, int frames) {
         engine_block(acc);
         for (int i = 0; i < CTL * 2; ++i) out[(f * 2) + i] = (short)acc[i];
     }
-    engine_load((int)((now_ns() - t0) * 100 * FS / frames / 1000000000LL));
+    int load = (int)((now_ns() - t0) * 100 * FS / frames / 1000000000LL);
+    engine_load(load);
     ui_unlock();
+    if (load >= 100) usleep(1000); /* late, so ALSA won't put it to sleep: it would retake the lock before the UI got it, and hog its core */
+}
+
+/* ponytail: one freeze on a device, never reproduced off it. This ends any that leaves the UI thread stuck and says
+ * what each thread was doing; a spinning thread's pc would need a signal handler, if freeze.txt ever shows one */
+static void *watchdog(void *arg) {
+    (void)arg;
+    struct sched_param sp = { .sched_priority = 60 }; /* above the audio thread, which may be what is spinning */
+    pthread_setschedparam(pthread_self(), SCHED_FIFO, &sp);
+    for (;;) {
+        usleep(1000000);
+        unsigned beat = ui_beat;
+        if (beat && (unsigned)plat_ms() - beat > FREEZE_MS) {
+            alarm(3); /* a card that has gone must not keep the app from quitting */
+            project_freeze_note(plat_dir());
+            _exit(1);
+        }
+    }
 }
 
 int main(int argc, char **argv) {
@@ -56,9 +79,12 @@ int main(int argc, char **argv) {
     pads_restore(project_dir);
     if (!plat_audio_start(render)) fprintf(stderr, "groovebox: no audio\n");
     long long next = plat_ms(), dirty_since = 0;
+    pthread_t dog;
+    pthread_create(&dog, 0, watchdog, 0);
     while (!ui_quit()) {
         long long t = plat_ms();
         event_t e;
+        ui_beat = (unsigned)t | 1;
         int wait = next > t ? (int)(next - t) : 0;
         while (plat_wait(wait, &e) && e.kind != 'q') ui_event(&e, plat_ms()), wait = 0;
         if (e.kind == 'q') break;
@@ -73,6 +99,7 @@ int main(int argc, char **argv) {
             if (t - dirty_since > 2000 && project_save(project_dir)) ui_saved(), dirty_since = 0;
         } else dirty_since = 0;
     }
+    ui_beat = 0;
     plat_audio_stop();
     if (ui_dirty()) project_save(project_dir);
     plat_close();

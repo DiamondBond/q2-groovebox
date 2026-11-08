@@ -70,7 +70,7 @@ static void *audio_thread(void *arg) {
     fcsr |= 1u << 24;
     __asm__ volatile("ctc1 %0, $31" : : "r"(fcsr));
 #endif
-    struct sched_param sp = { .sched_priority = 50 };
+    struct sched_param sp = { .sched_priority = 40 }; /* under the kernel's IRQ threads (50), which a late render mustn't shut out */
     pthread_setschedparam(pthread_self(), SCHED_FIFO, &sp);
     short buf[PERIOD * 2];
     volatile int *mono = 0, *swap = 0; /* the firmware's switches, looked for till they appear */

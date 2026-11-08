@@ -60,6 +60,7 @@
 #define PICK_ROWS 7
 #define PICK_MAX 512       /* ponytail: the first 512 of a folder are listed */
 #define DETENT 13          /* wheel units a step: sixteen a turn of 200 */
+#define WHEEL_REST_MS 250 /* the firmware sends no lift: a gap this long is a new touch */
 #define HOLD_MS 300        /* a step down this long opens */
 #define IDLE_QUIT_MS (5 * 60 * 1000)
 #define MSG_MS 2000        /* how long a result stays on the hint line */
@@ -89,7 +90,7 @@ static struct {
     int box, box_page;  /* the lit box and its page */
     int wheel_to, vol, acc, sweep; /* vol 0..100, the soft volume; acc wheel units since the last detent */
     int pad;            /* the cell under the finger, -1 */
-    long long pad_at, touch_at, last_input, dirty_at;
+    long long pad_at, touch_at, last_input, dirty_at, wheel_at;
     int dirty, quit;
     int job, job_shown, job_from;
     char job_arg[32], msg[64];
@@ -103,6 +104,7 @@ static struct {
     struct { char kind, name[256]; } row[PICK_MAX]; /* see pick_choose */
 } pick;
 
+volatile unsigned ui_beat;
 void ui_lock(void) { pthread_mutex_lock(&ui.lock_m); }
 void ui_unlock(void) { pthread_mutex_unlock(&ui.lock_m); }
 int ui_quit(void) { return ui.quit; }
@@ -173,7 +175,7 @@ static void job_start(int job, const char *m, long long now) {
 static void job_run(long long now) {
     int job = ui.job, r = 1, from = ui.job_from;
     char name[32] = "";
-    ui.job = 0;
+    ui.job = 0, ui_beat = 0;
     switch (job) {
     case J_KIT:
         if (kit_choose(ui.job_arg)) {
@@ -588,6 +590,8 @@ static int detents(int d) { /* units to whole steps, the remainder kept */
 }
 static void wheel(int d, long long now) {
     d = -d; /* the firmware's travel rises anticlockwise; here clockwise is up */
+    if (now - ui.wheel_at >= WHEEL_REST_MS || (d ^ ui.acc) < 0) ui.acc = 0; /* as the firmware's lists: a new touch or a reversal starts a whole step away */
+    ui.wheel_at = now;
     if (pick.open) { pick_move(detents(d)); return; }
     if (ui.wheel_to == WT_MODE && !boxes_on() && ui.mode == M_PADS && ui.pads == PADS_DRUMS) { /* the sweep: continuous, a turn end to end */
         ui.sweep = clampi(ui.sweep + d, -100, 100);
@@ -782,6 +786,7 @@ static void key(char what, int code, long long now) {
 }
 void ui_event(const event_t *e, long long now) {
     if (e->kind == 'q') { ui.quit = 1; return; }
+    if (ui.job) return; /* a queued job reads the picker: nothing moves it till it has run */
     ui.last_input = now;
     ui_lock();
     if (e->kind == 'w') wheel(e->a, now);

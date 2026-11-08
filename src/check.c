@@ -576,6 +576,23 @@ int main(void) {
     clear_pads();
     { char cmd[64]; snprintf(cmd, sizeof cmd, "rm -rf '%s'", root); assert(!system(cmd)); }
     for (int p = 0; p < NPAD; ++p) sound_swap(p, 0, 0, "", 0);
+    /* a queued preset holds the picker still: another engine under it would read past this one's presets */
+    seq_init(); engine_init(); ui_init(); pick_open(); centre_on_row(R_SYNTHS, 200); assert(pick.menu == PM_ENGINE); centre_on_row(0, 201); assert(pick.menu == PM_PRESET);
+    centre_on_row(synth_presets(0) - 1, 202); assert(ui.job == J_SYNTH);
+    { int engine = pick.engine; press(KEY_RETURN, 203); assert(pick.menu == PM_PRESET && pick.engine == engine); }
+    ui_beat = 5; run_job(204); assert(!ui.job && !ui_beat && sounds[ui.sound].src == SRC_SYNTH && sounds[ui.sound].preset == synth_presets(0) - 1); /* a long job isn't a freeze */
+    press(KEY_RETURN, 205); assert(pick.menu == PM_ENGINE);
+    clear_pads();
+    /* the wheel: a part of a step is forgotten over a pause or a reversal, and kept through a turn */
+    ui_init(); pick.open = 1; pick.n = 0;
+    wheel(-10, 1000); assert(ui.acc == 10); wheel(-10, 1100); assert(ui.acc == 7);
+    wheel(-10, 1100 + WHEEL_REST_MS); assert(ui.acc == 10); wheel(10, 1400); assert(ui.acc == -10);
+    pick.open = 0;
+    /* the freeze record: every thread's lines, whole, and no .new left */
+    { char d[] = "/tmp/gbfreezeXXXXXX", pf[300], got[4096] = ""; assert(mkdtemp(d)); project_freeze_note(d);
+      snprintf(pf, sizeof pf, "%s/freeze.txt", d); FILE *f = fopen(pf, "r"); assert(f); assert(fread(got, 1, sizeof got - 1, f) > 0); fclose(f);
+      assert(strstr(got, "blocks_in_200ms=") && strstr(got, " comm ") && strstr(got, " stat ") && strstr(got, " wchan "));
+      strcat(pf, ".new"); assert(access(pf, F_OK)); char cmd[64]; snprintf(cmd, sizeof cmd, "rm -rf '%s'", d); assert(!system(cmd)); }
     puts("check: ok");
     return 0;
 }

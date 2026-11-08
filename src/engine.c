@@ -67,6 +67,7 @@ static void live_kill(int pad) {
 }
 static void voice_cut(int pad) { voices[pad].on = 0, voices[pad].gate = 0, voices[pad].slide = 0; live_kill(pad); }
 void engine_stop(int pad) { voice_cut(pad); }
+int engine_load_now(void) { return eg.load; }
 void engine_load(int percent) { eg.load += (percent - eg.load) / 8; } /* a block's spike is no trend */
 int engine_is_offline(void) { return eg.offline; }
 void engine_offline(int on) { /* a clean slate either way; on, the file gets no soft volume or sweep */

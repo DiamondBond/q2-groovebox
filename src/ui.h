@@ -15,4 +15,5 @@ int ui_dirty(void);               /* the project changed since the last save (cl
 void ui_saved(void);
 void ui_lock(void);               /* seq and engine state: the audio thread takes it per period */
 void ui_unlock(void);
+extern volatile unsigned ui_beat; /* the UI thread's last pass in ms, for the watchdog; 0 through a long job */
 #endif

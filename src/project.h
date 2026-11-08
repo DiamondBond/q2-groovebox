@@ -16,4 +16,5 @@ void pads_restore(const char *dir);          /* the loaded sounds back, after th
 void pads_forget(const char *dir);           /* a kit change: their WAVs go */
 int project_load(const char *dir);           /* <dir>/project.txt into seq and the sounds: 1 if found */
 int project_save(const char *dir);           /* whole, .new then renamed: 1 on success */
+void project_freeze_note(const char *dir);   /* <dir>/freeze.txt: the audio's state and each thread's */
 #endif

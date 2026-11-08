@@ -16,7 +16,7 @@ USB it opens the first USB-Audio card at 44.1 kHz 16-bit. The volume starts wher
 Open it and press **Start**: a plain beat is already there. Tap the numbered boxes to add or remove
 hits, and turn the wheel to move to another sound. That is all you need to begin.
 
-<img src="docs/beat.png" width="375" alt="The Beat screen: Start, Tempo and Volume across the top, the sound list with Load sound and Track options on the left, sixteen numbered steps on the right, a line saying what the keys do, and the tabs Beat, Pads, Sound and Song along the bottom.">
+<img src="docs/beat.png" width="375" alt="The Beat screen: Start, Tempo and Volume across the top, the sound list with Load and Track buttons under it on the left, sixteen numbered steps on the right, a line saying what the keys do, and the tabs Beat, Pads, Sound and Song along the bottom.">
 
 The line above the tabs always says what the keys do on that screen. A value is always a labelled
 box: tap it, then turn the wheel. Tempo and Volume work the same way: tap one and it lights, the
@@ -34,14 +34,14 @@ wheel changes it, and tapping anything else hands the wheel back.
 ### Beat
 
 The list is your sixteen sounds, and the boxes are the steps of the one that is lit. A row of four
-is one beat. A coloured bar in the list means that sound has steps. **Load sound** gives the lit
+is one beat. A coloured bar in the list means that sound has steps. **Load** gives the lit
 sound a new one.
 
 Hold a step to open it: its note, volume, decay and filter, **Roll** (how many hits in the step),
 **Chance**, **Accent**, **Slide** and **Nudge**. **Remove step** takes it off, and **Done** or Return
 comes back.
 
-**Track options** has **Steps** (up to 64; arrows appear beside the hint for the pages), **Speed**
+**Track** has **Steps** (up to 64; arrows appear beside the hint for the pages), **Speed**
 (1/32 to 1/4, with triplets), **Clear steps** and **Undo**. On a synth or the 303, **Make tune**
 writes a line in the song's key and scale, **Vary tune** changes a few of its steps, and **Busy**
 sets how many notes it uses. Tracks of different lengths and speeds drift against each other, and a
@@ -62,7 +62,7 @@ The lit sound's controls. **More** turns the page. A synth starts with its **Pre
 walks through them; the 909, 808, 303 and drum loops show their own controls after Volume, Pitch,
 Echo, Reverb and Pan. Centre plays the sound, so you can hear each change.
 
-### Load sound
+### Load
 
 Wheel and Centre, or tap a row; **Back** or Return goes up one.
 

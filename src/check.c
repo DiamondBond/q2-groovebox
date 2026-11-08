@@ -84,7 +84,7 @@ static void press(int code, long long at) {
 static void centre_on_row(int row, long long at) { pick.cur = row, press(KEY_CENTRE, at); }
 static void run_job(long long at) { static pix cv[W * H]; ui_render(cv, at); ui_tick(at + 1); }
 static void tap_box(int i, long long at) { tap_at(box_x(i) + 5, box_y(i) + 5, at); }
-static void tap_left(int n, int k, long long at) { tap_at(SIDE + 5, left_y(n, k) + 5, at); }
+static void tap_left(int n, int k, long long at) { if (list_shown()) tap_at(small_x(k) + 5, SMALL_Y + 5, at); else tap_at(SIDE + 5, left_y(n, k) + 5, at); }
 static void hold_step(int i, long long at) { event_t h = tap_of(cell_x(i) + 5, cell_y(i) + 5, 'd'); ui_event(&h, at); ui_tick(at + HOLD_MS); h.what = 'u'; ui_event(&h, at + HOLD_MS + 1); }
 static int glass_x(int y) { /* the width the glass hides on row y */
     int d = y < GLASS_R ? GLASS_R - y : y >= H - GLASS_R ? y - (H - GLASS_R) + 1 : 0;
@@ -201,9 +201,10 @@ int main(void) {
       press(KEY_RETURN, 440); assert(!ui.over && s5->on && !seq.ntake);
       hold_step(5, 450); assert(ui.over == O_STEP); tap_left(5, 3, 800); assert(!ui.over && !s5->on && s5->level == UNSET && !s5->flags); }
     /* the wheel walks the sounds, the list's window following; tapping a row picks it */
-    for (int i = 0; i < 5; ++i) ui_event(&w, 810);
-    assert(ui.sound == 5 && ui.list_top == 2);
+    for (int i = 0; i < 7; ++i) ui_event(&w, 810);
+    assert(ui.sound == 7 && ui.list_top == 2);
     tap_at(SIDE + 5, BODY_Y + 1 * LIST_ROW + 5, 811); assert(ui.sound == 3);
+    tap_at(SIDE + 5, SMALL_Y - 1, 811); assert(ui.sound == 7 && !ui.over && !pick.open); /* the last row runs right down to the buttons */
     w.a = 13; for (int i = 0; i < 20; ++i) ui_event(&w, 812);
     w.a = -13; assert(!ui.sound && !ui.list_top);
     /* the top row: Start runs; Tempo lends the wheel until anything else is touched; so does Volume */
@@ -492,6 +493,7 @@ int main(void) {
       for (int i = 0; i < BOXES; ++i) on_glass(box_x(i), box_y(i), BOX_W, BOX_H);
       for (int c = 4; c <= 5; ++c) for (int i = 0; i < c; ++i) on_glass(SIDE, left_y(c, i), LEFT_W, left_h(c));
       for (int r = 0; r < LIST_ROWS; ++r) on_glass(SIDE, BODY_Y + r * LIST_ROW, LEFT_W, LIST_ROW - 2);
+      for (int k = 3; k <= 4; ++k) on_glass(small_x(k), SMALL_Y, SMALL_W, SMALL_H);
       for (int r = 0; r < PICK_ROWS; ++r) on_glass(SIDE, BODY_Y + r * ROW_H, BODY_W, ROW_H - 2); }
     /* a project with no steps starts with a beat; one with any keeps what it has */
     seq_init(); seq_starter(); assert(seq.pat[0].s[0][0].on && seq.pat[0].s[0][12].on && seq.pat[0].s[1][4].on && !seq.pat[0].s[1][0].on && seq.pat[0].s[2][2].on);
@@ -508,7 +510,7 @@ int main(void) {
     ui.sound = 0; ui_event(&w, 50); assert(ui.sound == 1);
     /* on a break the pads are its slices and tricks: the eleventh is the last that means anything (ASan) */
     assert(load_break_builtin(3, 0)); ui.sound = 3; tap_pad(0, 80); tap_pad(10, 90); tap_pad(15, 100);
-    /* Track options: Steps makes pages, the keys and the arrows turn them, a short track keeps its cells */
+    /* Track: Steps makes pages, the keys and the arrows turn them, a short track keeps its cells */
     clear_pads(); seq_init(); engine_init(); ui_init(); memset(&pick, 0, sizeof pick); ui.sound = 1;
     tap_left(5, 4, 10); assert(ui.over == O_TRACK); tap_box(T_STEPS, 12);
     for (int i = 0; i < 16; ++i) ui_event(&w, 13);

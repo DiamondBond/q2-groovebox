@@ -54,8 +54,11 @@
 #define BOXES 9            /* a page of them */
 #define ARROW_W 33
 #define ARROW_X 287
-#define LIST_ROWS 4
-#define LIST_ROW 32
+#define LIST_ROWS 6
+#define LIST_ROW 30
+#define SMALL_Y (BODY_Y + LIST_ROWS * LIST_ROW) /* the two small buttons under the list */
+#define SMALL_H (BODY_Y + BODY_H - SMALL_Y)
+#define SMALL_W ((LEFT_W - GAP) / 2)
 #define ROW_H 31           /* the picker's rows */
 #define PICK_ROWS 7
 #define PICK_MAX 512       /* ponytail: the first 512 of a folder are listed */
@@ -148,6 +151,7 @@ static int box_x(int i) { return BOX_X + (i % 3) * (BOX_W + GAP); }
 static int box_y(int i) { return BODY_Y + (i / 3) * (BOX_H + GAP); }
 static int left_h(int n) { return (BODY_H - (n - 1) * GAP) / n; }
 static int left_y(int n, int k) { return BODY_Y + k * (left_h(n) + GAP); }
+static int small_x(int k) { return SIDE + (k - 3) * (LEFT_W - SMALL_W); } /* slots 3 and 4, flush with the list both sides */
 static int pill_x(int i) { return EDGE + i * (PILL_W + PILL_GAP); }
 static int tab_x(int i) { return EDGE + i * (TAB_W + PILL_GAP); }
 static int left_count(void) { return !ui.over && ui.mode == M_PADS ? 4 : 5; }
@@ -693,10 +697,10 @@ static int left_label(int k, char *out, size_t n) {
     if (boxes_on()) pages = (boxes(id) + BOXES - 1) / BOXES;
     if (ui.over == O_STEP) s = k == 3 && step_cur()->on ? "Remove step" : k == 4 ? "Hear it" : "";
     else if (ui.over || ui.mode == M_SOUND) {
-        if (k == 3 && ui.mode == M_SOUND && !ui.over) s = "Load sound";
+        if (k == 3 && ui.mode == M_SOUND && !ui.over) s = "Load";
         else if (k == 4 && pages > 1) { snprintf(out, n, "More %d/%d", ui.box_page + 1, pages); return 0; }
     }
-    else if (ui.mode == M_BEAT) s = k == 3 ? "Load sound" : k == 4 ? "Track options" : "";
+    else if (ui.mode == M_BEAT) s = k == 3 ? "Load" : k == 4 ? "Track" : "";
     else if (ui.mode == M_PADS) s = pads[k], lit = k == 3 ? seq.rec : k == ui.pads;
     else s = song[k];
     snprintf(out, n, "%s", s);
@@ -729,10 +733,11 @@ static void left_tap(int k, long long now) {
     else if (k == 3) { if (!ui.job) job_start(J_EXPORT, "Saving", now); }
     else open_over(O_SET);
 }
-static void left_touch(int y, long long now) {
-    int n = left_count(), k = clampi((y - BODY_Y) / (left_h(n) + GAP), 0, n - 1);
-    if (list_shown() && k < 3) select_sound(ui.list_top + clampi((y - BODY_Y) / LIST_ROW, 0, LIST_ROWS - 1));
-    else left_tap(k, now);
+static void left_touch(int x, int y, long long now) {
+    int n = left_count();
+    if (!list_shown()) left_tap(clampi((y - BODY_Y) / (left_h(n) + GAP), 0, n - 1), now);
+    else if (y < SMALL_Y) select_sound(ui.list_top + clampi((y - BODY_Y) / LIST_ROW, 0, LIST_ROWS - 1));
+    else left_tap(x < small_x(4) ? 3 : 4, now);
 }
 
 /* ---- touches and keys ---- */
@@ -762,7 +767,7 @@ static void touch_down(int x, int y, long long now) {
     } else if (y >= BODY_Y + BODY_H) { /* the line above the tabs holds Beat's page arrows */
         if (x >= ARROW_X && ui.mode == M_BEAT && !ui.over && track_pages() > 1)
             ui.page = clampi(ui.page + (x < ARROW_X + ARROW_W + 2 ? -1 : 1), 0, track_pages() - 1);
-    } else if (x < GRID_X - 2) left_touch(y, now);
+    } else if (x < GRID_X - 2) left_touch(x, y, now);
     else if (boxes_on()) box_touch(clampi((y - BODY_Y) / (BOX_H + GAP), 0, 2) * 3 + clampi((x - BOX_X) / (BOX_W + GAP), 0, 2), now);
     else cell_down(clampi((y - BODY_Y) / (CELL_H + GAP), 0, 3) * 4 + clampi((x - GRID_X) / (CELL_W + GAP), 0, 3), now); /* no dead gaps */
 }
@@ -1000,7 +1005,9 @@ static void left_draw(pix *c) {
     }
     for (int k = 0; k < n; ++k) {
         int lit = left_label(k, b, sizeof b);
-        if (b[0]) button(c, SIDE, left_y(n, k), LEFT_W, h, b, lit, k == 3 && n == 4 ? RED : SEL);
+        if (!b[0]) continue;
+        if (list_shown()) button(c, small_x(k), SMALL_Y, SMALL_W, SMALL_H, b, lit, SEL);
+        else button(c, SIDE, left_y(n, k), LEFT_W, h, b, lit, k == 3 && n == 4 ? RED : SEL);
     }
 }
 static void boxes_draw(pix *c) {

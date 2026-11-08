@@ -1,7 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Diamond Bond
  * The device: the framebuffer and the firmware's input socket, after Buddy's (q2-fidget, MIT),
- * and the firmware's argv: the ALSA device, then on Bluetooth or USB its volume (NN, or hNN). */
+ * and the firmware's argv: the ALSA device, then on Bluetooth or USB its volume (NN to apply here,
+ * hNN applied by the DAC itself: unity here). */
 #include <fcntl.h>
 #include <linux/fb.h>
 #include <poll.h>
@@ -39,7 +40,7 @@ int plat_start_gain(void) { return start_gain; }
 
 int plat_open(int argc, char **argv) {
     if (argc > 1 && argv[1][0]) audio_device = argv[1];
-    if (argc > 2 && argv[2][0]) start_gain = bt_gain(atoi(argv[2] + (argv[2][0] == 'h')));
+    if (argc > 2 && argv[2][0] && argv[2][0] != 'h') start_gain = bt_gain(atoi(argv[2]));
     snprintf(dir, sizeof dir, "%s", argc > 0 ? argv[0] : "");
     char *slash = strrchr(dir, '/');
     if (slash) *slash = 0;

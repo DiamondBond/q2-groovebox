@@ -16,20 +16,7 @@ USB it opens the first USB-Audio card at 44.1 kHz 16-bit. The volume starts wher
 Open it and press **Start**: a plain beat is already there. Tap the numbered boxes to add or remove
 hits, and turn the wheel to move to another sound. That is all you need to begin.
 
-```
-   [ Start ]  [ Tempo 120 ]  [ Volume 100 ]
- ┌────────────┐ ┌────┬────┬────┬────┐
- │ Kick       │ │  1 │  2 │  3 │  4 │
- │ Snare      │ ├────┼────┼────┼────┤
- │ Hat        │ │  5 │  6 │  7 │  8 │
- │ Open Hat   │ ├────┼────┼────┼────┤
- │ Load sound │ │  9 │ 10 │ 11 │ 12 │
- │ Track opts │ ├────┼────┼────┼────┤
- └────────────┘ │ 13 │ 14 │ 15 │ 16 │
-                └────┴────┴────┴────┘
-          what the keys do right now
-   [ Beat 1 ] [ Pads ] [ Sound ] [ Song ]
-```
+<img src="docs/beat.png" width="375" alt="The Beat screen: Start, Tempo and Volume across the top, the sound list with Load sound and Track options on the left, sixteen numbered steps on the right, a line saying what the keys do, and the tabs Beat, Pads, Sound and Song along the bottom.">
 
 The line above the tabs always says what the keys do on that screen. A value is always a labelled
 box: tap it, then turn the wheel. Tempo and Volume work the same way: tap one and it lights, the

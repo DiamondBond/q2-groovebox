@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Diamond Bond
- * What a pad plays when it isn't a plain sample: assigning one, SOUND 2's tiles, the generator. */
+ * What a pad plays when it isn't a plain sample: assigning one, the machine's boxes, the generator. */
 #ifndef SOURCE_H
 #define SOURCE_H
 #include <stddef.h>

@@ -104,7 +104,19 @@ int plat_wait(int ms, event_t *e) {
     return 0;
 }
 
+/* what the Q2's rounded glass would leave of the frame, so the host shows what the device does */
+static const pix *glassed(const pix *canvas) {
+    static pix out[W * H];
+    memcpy(out, canvas, sizeof out);
+    for (int y = 0; y < H; ++y) {
+        int d = y < 80 ? 80 - y : y >= H - 80 ? y - (H - 80) + 1 : 0;
+        int hide = d ? 80 - (int)SDL_sqrt(80 * 80 - d * d) : 0;
+        for (int x = 0; x < hide; ++x) out[y * W + x] = out[y * W + W - 1 - x] = 0xff000000u;
+    }
+    return out;
+}
 void plat_show(const pix *canvas) {
+    canvas = glassed(canvas);
     if (script) {
         if (!shot[0]) return;
         char path[400];

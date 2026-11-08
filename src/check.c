@@ -73,8 +73,8 @@ static void tap_at(int x, int y, long long at) {
     t.what = 'u';
     ui_event(&t, at + 1);
 }
-static void tap_pad(int i, long long at) { tap_at(pad_x(i) + 5, pad_y(i) + 5, at); }
-static void tap_tab(int m, long long at) { tap_at(TAB_X + 10, STRIP + m * TAB_H + 5, at); }
+static void tap_pad(int i, long long at) { tap_at(cell_x(i) + 5, cell_y(i) + 5, at); }
+static void tap_tab(int m, long long at) { tap_at(tab_x(m) + 10, TABS_Y + 5, at); }
 static void press(int code, long long at) {
     event_t k = { 'k', 'd', code, 0 };
     ui_event(&k, at);
@@ -83,14 +83,33 @@ static void press(int code, long long at) {
 }
 static void centre_on_row(int row, long long at) { pick.cur = row, press(KEY_CENTRE, at); }
 static void run_job(long long at) { static pix cv[W * H]; ui_render(cv, at); ui_tick(at + 1); }
-static void all_screens(long long at) { /* every mode on this sound, ASan and UBSan watching the labels */
+static void tap_box(int i, long long at) { tap_at(box_x(i) + 5, box_y(i) + 5, at); }
+static void tap_left(int n, int k, long long at) { tap_at(SIDE + 5, left_y(n, k) + 5, at); }
+static void hold_step(int i, long long at) { event_t h = tap_of(cell_x(i) + 5, cell_y(i) + 5, 'd'); ui_event(&h, at); ui_tick(at + HOLD_MS); h.what = 'u'; ui_event(&h, at + HOLD_MS + 1); }
+static int glass_x(int y) { /* the width the glass hides on row y */
+    int d = y < GLASS_R ? GLASS_R - y : y >= H - GLASS_R ? y - (H - GLASS_R) + 1 : 0;
+    return d ? (int)ceil(GLASS_R - sqrt(GLASS_R * GLASS_R - d * d)) : 0;
+}
+static void on_glass(int x, int y, int w, int h) {
+    assert(y >= 0 && y + h <= H);
+    assert(x >= glass_x(y) && x >= glass_x(y + h - 1) && x + w <= W - glass_x(y) && x + w <= W - glass_x(y + h - 1));
+}
+static void all_screens(long long at) { /* every screen on this sound, ASan and UBSan watching, each hint fitting its line */
     static pix cv[W * H];
+    char b[120];
+    int id[32];
+#define SHOW (ui_render(cv, at), hint_text(b, sizeof b), assert(text_w(b, 0) <= hint_w()))
     for (ui.mode = 0; ui.mode < M_N; ++ui.mode) {
-        for (ui.layer = 0; ui.layer < 2; ++ui.layer)
-            for (ui.sound2 = 0; ui.sound2 < 2; ++ui.sound2)
-                for (ui.fx_page = 0; ui.fx_page <= FX_PAGES; ++ui.fx_page) ui_render(cv, at);
+        ui.over = O_NONE;
+        for (ui.pads = 0; ui.pads < 3; ++ui.pads) SHOW;
+        ui.pads = 0;
+        for (ui.over = O_NONE; ui.over <= O_SET; ++ui.over) {
+            if (ui.over == O_SOUND) continue;
+            for (ui.box_page = 0; ui.box_page * BOXES < (boxes_on() ? boxes(id) : 1); ++ui.box_page) SHOW;
+        }
     }
-    ui.mode = ui.layer = ui.sound2 = ui.fx_page = 0;
+    ui.mode = ui.over = ui.box_page = ui.box = 0;
+#undef SHOW
 }
 static const char *drop_code(void) { return d.code; }
 static int kit_sub(int src, int slot) { int sub, e[NTILE], choke; const char *nm; x0x_kit(src, slot, &sub, e, &nm, &choke); return sub; }
@@ -166,25 +185,42 @@ int main(void) {
     seq_init(); engine_init(); assert(project_load(d));
     assert(seq.bpm == 133 && seq.swing == 20 && seq.pat[2].s[5][7].on && seq.pat[2].s[5][7].pitch == -5 && seq.pat[2].s[5][7].level == UNSET && seq.pat[2].len[5] == 12 && sounds[5].p[P_CUTOFF] == 60 && !seq.pat[2].s[5][6].on);
     char p[300]; snprintf(p, sizeof p, "%s/project.txt", d); unlink(p); rmdir(d);
-    /* the stage: a tap on pad 1 (bottom-left) in PLAY selects it; WRITE toggles step 1; a turn while held is no tap */
-    seq_init(); engine_init(); ui_init();
-    event_t e = { 't', 'd', PAD_X + 5, STRIP + 3 * 72 + 5 }; ui_event(&e, 0); e.what = 'u'; ui_event(&e, 10);
-    assert(ui.sound == 0 && pad_at(PAD_X + 5, STRIP + 5) == 12);
-    e = (event_t){ 't', 'd', TAB_X + 10, STRIP + M_WRITE * TAB_H + 5 }; ui_event(&e, 20); e.what = 'u'; ui_event(&e, 25);
-    assert(ui.mode == M_WRITE);
-    e = (event_t){ 't', 'd', PAD_X + 5, STRIP + 3 * 72 + 5 }; ui_event(&e, 30); e.what = 'u'; ui_event(&e, 40);
-    assert(seq.pat[0].s[0][0].on);
-    e.what = 'd'; ui_event(&e, 50); event_t w = { 'w', 0, -13, 0 }; ui_event(&w, 55); e.what = 'u'; ui_event(&e, 60);
-    assert(seq.pat[0].s[0][0].on && seq.pat[0].s[0][0].level == 101); /* held + a clockwise detent: a lock, still on */
-    /* Centre: a tap toggles REC, a hold with the wheel is the volume */
-    event_t k = { 'k', 'd', KEY_CENTRE, 0 }; ui_event(&k, 100); k.what = 'u'; ui_event(&k, 150); assert(seq.rec == 1);
-    k.what = 'd'; ui_event(&k, 200); ui_tick(600); ui_event(&w, 610); k.what = 'u'; ui_event(&k, 620);
-    assert(seq.rec == 1 && ui.vol == 100); /* at the top already */
-    w.a = 13; k.what = 'd'; ui_event(&k, 700); ui_event(&w, 710); k.what = 'u'; ui_event(&k, 720); assert(ui.vol == 95 && seq.rec == 1);
-    /* Return undoes the take; Prev/Next cue; idle quits after 5 minutes stopped */
-    ui.mode = M_PLAY; k = (event_t){ 'k', 'd', KEY_NEXT, 0 }; ui_event(&k, 800); assert(seq.cur == 1);
-    seq_rec(1); seq_tap(1); k = (event_t){ 'k', 'd', KEY_RETURN, 0 }; ui_event(&k, 810); k.what = 'u'; ui_event(&k, 820);
-    ui_tick(820 + IDLE_QUIT_MS + 1); assert(ui_quit());
+    /* Beat: step 1 is top-left, a tap turns it on and off; a hold opens it instead, the wheel there writes it, Return comes back */
+    seq_init(); engine_init(); ui_init(); memset(&pick, 0, sizeof pick);
+    event_t w = { 'w', 0, -13, 0 }; /* a clockwise detent */
+    { const step_t *s5 = &seq.pat[0].s[0][5];
+      assert(ui.mode == M_BEAT); tap_pad(0, 30); assert(seq.pat[0].s[0][0].on); tap_pad(0, 40); assert(!seq.pat[0].s[0][0].on);
+      event_t h = tap_of(cell_x(5) + 5, cell_y(5) + 5, 'd'); ui_event(&h, 50); ui_tick(50 + HOLD_MS - 1); assert(!ui.over); ui_tick(50 + HOLD_MS); assert(ui.over == O_STEP && ui.step == 5);
+      h.what = 'u'; ui_event(&h, 400); assert(!s5->on); /* the lift isn't a tap */
+      tap_box(S_LEVEL, 410); ui_event(&w, 420); assert(s5->on && s5->level == 101);
+      tap_box(S_NOTE, 421); ui_event(&w, 422); assert(s5->pitch == 1);
+      tap_box(S_ROLL, 430); ui_event(&w, 431); assert(s5->ratchet == 2);
+      tap_box(S_CHANCE, 432); w.a = 13; ui_event(&w, 433); w.a = -13; assert(s5->chance == 95);
+      tap_box(S_ACCENT, 434); tap_box(S_SLIDE, 435); assert(s5->flags == (NOTE_ACCENT | NOTE_SLIDE));
+      tap_box(S_NUDGE, 436); ui_event(&w, 437); assert(s5->nudge == 8);
+      press(KEY_RETURN, 440); assert(!ui.over && s5->on && !seq.ntake);
+      hold_step(5, 450); assert(ui.over == O_STEP); tap_left(5, 3, 800); assert(!ui.over && !s5->on && s5->level == UNSET && !s5->flags); }
+    /* the wheel walks the sounds, the list's window following; tapping a row picks it */
+    for (int i = 0; i < 5; ++i) ui_event(&w, 810);
+    assert(ui.sound == 5 && ui.list_top == 2);
+    tap_at(SIDE + 5, BODY_Y + 1 * LIST_ROW + 5, 811); assert(ui.sound == 3);
+    w.a = 13; for (int i = 0; i < 20; ++i) ui_event(&w, 812);
+    w.a = -13; assert(!ui.sound && !ui.list_top);
+    /* the top row: Start runs; Tempo lends the wheel until anything else is touched; so does Volume */
+    tap_at(pill_x(0) + 5, TOP_Y + 5, 820); assert(seq.playing); tap_at(pill_x(0) + 5, TOP_Y + 5, 821); assert(!seq.playing);
+    tap_at(pill_x(1) + 5, TOP_Y + 5, 822); assert(ui.wheel_to == WT_BPM); ui_event(&w, 823); assert(seq.bpm == 121 && !ui.sound);
+    tap_pad(3, 824); assert(ui.wheel_to == WT_MODE); ui_event(&w, 825); assert(seq.bpm == 121 && ui.sound == 1);
+    tap_at(pill_x(2) + 5, TOP_Y + 5, 826); w.a = 13; ui_event(&w, 827); w.a = -13; assert(ui.vol == 95); tap_at(pill_x(2) + 5, TOP_Y + 5, 828); assert(ui.wheel_to == WT_MODE);
+    /* Record starts the beat; Stop ends the take and Return still undoes it; then there is nothing left to undo */
+    seq_init(); engine_init(); ui_init(); tap_tab(M_PADS, 830); assert(ui.mode == M_PADS);
+    tap_left(4, 3, 831); assert(seq.rec && seq.playing); seq.pos = 100; tap_pad(1, 832); assert(seq.pat[0].s[1][0].on && ui.sound == 1);
+    tap_at(pill_x(0) + 5, TOP_Y + 5, 833); assert(!seq.playing && !seq.rec);
+    press(KEY_RETURN, 834); assert(!seq.pat[0].s[1][0].on && !strcmp(ui.msg, "Undone")); press(KEY_RETURN, 835); assert(!strcmp(ui.msg, "Nothing to undo"));
+    /* the sweep leaves with its view */
+    { event_t s3 = { 'w', 0, -39, 0 }; tap_left(4, 0, 836); ui_event(&s3, 837); assert(eg.sweep == 39); tap_left(4, 1, 838); assert(!eg.sweep && !ui.sweep); tap_left(4, 0, 839); ui_event(&s3, 840); assert(eg.sweep == 39); tap_tab(M_BEAT, 841); assert(!eg.sweep && !ui.sweep); }
+    /* Next cues the next beat where there is no page to turn; on Sound it is the next sound; idle quits after 5 minutes stopped */
+    tap_tab(M_SONG, 842); press(KEY_NEXT, 843); assert(seq.cur == 1); tap_tab(M_SOUND, 844); press(KEY_NEXT, 845); assert(ui.sound == 2 && seq.cur == 1);
+    ui_tick(845 + IDLE_QUIT_MS + 2); assert(ui_quit());
     /* the review's cases: the idle clock starts at the app's start, not the device's boot */
     seq_init(); engine_init(); fake_now = 3600 * 1000; ui_init(); ui_tick(3600 * 1000 + 1000); assert(!ui_quit()); fake_now = 0;
     /* Start 127 with Loop on: the voice keeps to the sample (ASan watches); a sample past 65535 frames plays whole */
@@ -210,11 +246,12 @@ int main(void) {
     seq_init(); engine_init(); seq_play(1); seq_rec(1); seq.swing = 100; sounds[0].smp.pcm = click; sounds[0].smp.n = 100;
     seq.pos = 5512 + 100; seq_tap(0); assert(seq.pat[0].s[0][1].on && !voices[0].on);
     for (int f = 5512 + 100; f < 5512 * 2; f += CTL) { seq.pos = f; seq_block(); } assert(voices[0].on);
-    /* PATT: a held pattern joins the song, starting from the current one; Return takes it off */
-    seq_init(); engine_init(); ui_init(); ui.mode = M_PATT;
-    e = (event_t){ 't', 'd', PAD_X + 5 + 72, STRIP + 3 * 72 + 5 }; ui_event(&e, 10); ui_tick(10 + HOLD_MS); e.what = 'u'; ui_event(&e, 400);
-    assert(seq.nsong == 2 && seq.song[0] == 0 && seq.song[1] == 1 && seq.cur == 0);
-    k = (event_t){ 'k', 'd', KEY_RETURN, 0 }; ui_event(&k, 500); assert(seq.nsong == 2); k.what = 'u'; ui_event(&k, 550); assert(!seq.nsong);
+    /* Song: a beat tapped is played; Add to song starts the list; Remove last takes one off; Copy beat goes to the next empty one */
+    seq_init(); engine_init(); ui_init(); memset(&pick, 0, sizeof pick); ui.mode = M_SONG;
+    tap_pad(1, 10); assert(seq.cur == 1); tap_left(5, 0, 20); assert(seq.nsong == 1 && seq.song[0] == 1);
+    tap_pad(2, 30); tap_left(5, 0, 40); assert(seq.nsong == 2 && seq.song[1] == 2 && seq.cur == 2); tap_left(5, 1, 50); assert(seq.nsong == 1);
+    seq.pat[2].s[3][4].on = 1; seq.pat[4].s[1][1].on = 1; tap_left(5, 2, 60); assert(seq.pat[3].s[3][4].on && seq.cur == 3 && !strcmp(ui.msg, "Copied to Beat 4"));
+    tap_left(5, 2, 62); assert(seq.pat[5].s[3][4].on && seq.cur == 5); /* Beat 5 had steps: over it */
     /* End 0 with Loop on stays inside the sample (ASan watches) */
     seq_init(); engine_init(); static short two[2] = { 100, 200 }; sounds[0].smp.pcm = two; sounds[0].smp.n = 2; sounds[0].p[P_END] = 0; sounds[0].p[P_LOOP] = 1;
     engine_trigger(0, UNSET, UNSET, UNSET, UNSET); assert(voices[0].start == 0 && voices[0].end == 1 << 16); for (int b = 0; b < 4; ++b) engine_block(acc); sounds[0].smp.pcm = 0; sounds[0].smp.n = 0;
@@ -273,24 +310,26 @@ int main(void) {
     kit_open("other"); assert(!strcmp(kit_name, "other") && !strcmp(sounds[0].smp.name, "Bee") && sounds[0].smp.n == 1600 && !sounds[5].smp.pcm && !sounds[5].smp.loaded);
     kit_open("../other"); assert(!strcmp(kit_name, "default") && !strcmp(sounds[0].smp.name, "Kick"));
     kit_open("nope"); assert(!strcmp(kit_name, "default"));
-    /* the picker: the kits lead, then folders, then sounds; Centre and Return are its own while open */
+    /* the picker: what a sound can be first, then the kits or the card, folders before files; Back walks up */
     snprintf(pth, sizeof pth, "%s/media", root); setenv("GROOVEBOX_MEDIA", pth, 1);
     snprintf(pth, sizeof pth, "%s/media/it's a $test.wav", root); assert(wav_write(pth, w4, 1600, 1));
     snprintf(pth, sizeof pth, "%s/media/notes.txt", root); FILE *nt = fopen(pth, "w"); fclose(nt);
-    seq_init(); engine_init(); ui_init(); memset(&pick, 0, sizeof pick); ui.mode = M_SOUND; ui.sound = 2;
-    e = (event_t){ 't', 'd', pad_x(P_LOAD) + 5, pad_y(P_LOAD) + 5 }; ui_event(&e, 10); e.what = 'u'; ui_event(&e, 20); ui_tick(25);
-    assert(pick.open && pick.n == 13 && pick.row[0].kind == 'S' && pick.row[5].kind == 'p' && pick.row[6].kind == 'k' && !strcmp(pick.row[6].name, KIT_808_LIVE) && !strcmp(pick.row[8].name, "default") && pick.row[10].kind == 'd' && !strcmp(pick.row[10].name, "Music") && !strcmp(pick.row[11].name, "sub") && pick.row[12].kind == 'f');
+    seq_init(); engine_init(); ui_init(); memset(&pick, 0, sizeof pick); ui.sound = 2;
+    tap_left(5, 3, 10); assert(pick.open && pick.menu == PM_ROOT && pick.n == R_PHONE + 1 && pick.row[R_KITS].kind == 'K' && pick.row[R_CARD].kind == 'm' && pick.row[R_PHONE].kind == 'p');
     { static pix cv[W * H]; ui_render(cv, 30); }
-    w = (event_t){ 'w', 0, -13 * 10, 0 }; ui_event(&w, 40); assert(pick.cur == 10);
-    k = (event_t){ 'k', 'd', KEY_CENTRE, 0 }; ui_event(&k, 50); k.what = 'u'; ui_event(&k, 60); ui_tick(65); assert(!strcmp(strrchr(pick.dir, '/'), "/Music") && pick.n == 0 && !seq.rec);
-    k = (event_t){ 'k', 'd', KEY_RETURN, 0 }; ui_event(&k, 70); k.what = 'u'; ui_event(&k, 80); ui_tick(85); assert(pick.open && pick.n == 13 && !seq.ntake);
-    w.a = -13 * 12; ui_event(&w, 90); assert(pick.cur == 12);
-    k = (event_t){ 'k', 'd', KEY_CENTRE, 0 }; ui_event(&k, 100); k.what = 'u'; ui_event(&k, 110); assert(pick.menu == PM_ASK && pick.n == ASK_ROWS + REGIONS && pick.row[0].kind == 'h' && pick.row[1].kind == 'c' && pick.row[2].kind == 'B' && !strncmp(pick.row[ASK_ROWS].name, "To pad 3", 8));
-    k = (event_t){ 'k', 'd', KEY_RETURN, 0 }; ui_event(&k, 120); k.what = 'u'; ui_event(&k, 130); ui_tick(135); assert(pick.menu == PM_DIR && pick.cur == 12);
-    /* a tap below the last drawn row picks nothing; a stray file in kits/ is no kit; a Centre held as the picker opens lets go */
-    { int was = pick.n; pick.n = 40; e = (event_t){ 't', 'd', 20, H - 1 }; int cur = pick.cur; ui_event(&e, 136); assert(pick.cur == cur && pick.menu == PM_DIR); pick.n = was; e.what = 'u'; ui_event(&e, 137);
-      snprintf(pth, sizeof pth, "%s/kits/stray.wav", root); assert(wav_write(pth, w4, 1600, 1)); pick_back(); ui_tick(138); pick_open(); ui_tick(139); assert(pick.n == 13 && !kit_choose("stray.wav")); unlink(pth);
-      ui.centre = ui.centre_hold = 1; k = (event_t){ 'k', 'u', KEY_CENTRE, 0 }; ui_event(&k, 140); assert(pick.open && !ui.centre && !ui.centre_hold); }
+    w.a = -13 * 10; ui_event(&w, 40); w.a = -13; assert(pick.cur == R_PHONE);
+    centre_on_row(R_CARD, 50); ui_tick(51); assert(pick.menu == PM_DIR && pick.n == 3 && pick.row[0].kind == 'd' && !strcmp(pick.row[0].name, "Music") && !strcmp(pick.row[1].name, "sub") && pick.row[2].kind == 'f');
+    centre_on_row(0, 52); ui_tick(53); assert(!strcmp(strrchr(pick.dir, '/'), "/Music") && pick.n == 0);
+    press(KEY_RETURN, 54); ui_tick(55); assert(pick.open && pick.n == 3);
+    pick.cur = 2; press(KEY_CENTRE, 56); assert(pick.menu == PM_ASK && pick.n == ASK_ROWS + REGIONS && pick.row[0].kind == 'r' && !strcmp(pick.row[0].name, "Use on this sound") && pick.row[1].kind == 'h' && pick.row[2].kind == 'c' && pick.row[3].kind == 'B' && !strcmp(pick.row[4].name, "Use from 0:20"));
+    press(KEY_RETURN, 57); ui_tick(58); assert(pick.menu == PM_DIR && pick.cur == 2);
+    /* the file's start points: the first row is 0:00, the row after the slices is the next */
+    pick_ask(); centre_on_row(4, 59); assert(ui.job == J_PAD && ui.job_from == 1 && !pick.open); ui.job = 0; ui.msg_until = 0; pick.open = 1; pick.menu = PM_DIR; pick_rescan(PM_DIR, 2); ui_tick(60);
+    pick_ask(); centre_on_row(0, 61); assert(ui.job == J_PAD && !ui.job_from); ui.job = 0; ui.msg_until = 0; pick.open = 1; pick_rescan(PM_DIR, 2); ui_tick(62);
+    /* a tap below the last row picks nothing; a stray file in kits/ is no kit; Back at the top closes */
+    { int was = pick.n, cur = pick.cur; pick.n = 2; tap_at(40, BODY_Y + 5 * ROW_H, 63); assert(pick.cur == cur && pick.menu == PM_DIR); pick.n = was;
+      snprintf(pth, sizeof pth, "%s/kits/stray.wav", root); assert(wav_write(pth, w4, 1600, 1)); pick_back(); assert(pick.menu == PM_ROOT && pick.cur == R_CARD); centre_on_row(R_KITS, 64); ui_tick(65); assert(pick.menu == PM_KITS && pick.n == 4 && !kit_choose("stray.wav")); unlink(pth);
+      press(KEY_RETURN, 66); assert(pick.menu == PM_ROOT && pick.cur == R_KITS); press(KEY_RETURN, 67); assert(!pick.open); }
     /* a card file through ffmpeg, a name with a quote and a $ (no shell); one region to the pad, then a chop */
     if (!access(FFMPEG, X_OK)) {
         snprintf(pth, sizeof pth, "%s/media/it's a $test.wav", root);
@@ -310,19 +349,17 @@ int main(void) {
         pads_forget(pth); snprintf(pth, sizeof pth, "%s/projects/1/pad03.wav", root); assert(access(pth, F_OK));
         snprintf(pth, sizeof pth, "%s", project_path()); strcat(pth, "/project.txt"); unlink(pth);
     }
-    /* FX: a held pad runs its effect, a Centre-held one latches until the next tap, which does only that */
-    seq_init(); engine_init(); ui_init(); memset(&pick, 0, sizeof pick); ui.mode = M_FX;
-    event_t f0 = { 't', 'd', pad_x(1) + 5, pad_y(1) + 5 }, f1 = { 't', 'd', pad_x(4) + 5, pad_y(4) + 5 };
+    /* Effects: a held pad runs its effect, lifted it stops; the wheel turns the page and stops at the last */
+    seq_init(); engine_init(); ui_init(); memset(&pick, 0, sizeof pick); ui.mode = M_PADS; ui.pads = PADS_FX;
+    event_t f0 = tap_of(cell_x(1) + 5, cell_y(1) + 5, 'd');
     ui_event(&f0, 10); assert(fx_sounding() == fx_page[0][1]); f0.what = 'u'; ui_event(&f0, 20); assert(fx_sounding() == -1);
-    k = (event_t){ 'k', 'd', KEY_CENTRE, 0 }; ui_event(&k, 30); f1.what = 'd'; ui_event(&f1, 40); f1.what = 'u'; ui_event(&f1, 50); k.what = 'u'; ui_event(&k, 60); assert(fx_sounding() == fx_page[0][4] && ui.fx_latched && !seq.rec);
-    f0.what = 'd'; ui_event(&f0, 70); assert(fx_sounding() == -1 && !ui.fx_latched); f0.what = 'u'; ui_event(&f0, 80); assert(fx_sounding() == -1);
-    w = (event_t){ 'w', 0, -13, 0 }; ui_event(&w, 90); assert(ui.fx_page == 1); w.a = 13; ui_event(&w, 95); assert(ui.fx_page == 0);
-    /* with REC on it is written quantised, played back, undone, and Return with nothing to undo clears the bar */
+    ui_event(&w, 90); ui_event(&w, 91); assert(ui.fx_page == FX_PAGES - 1); w.a = 13; ui_event(&w, 95); w.a = -13; assert(!ui.fx_page);
+    /* with Record on it is written quantised, played back, undone, and Return with nothing to undo clears the beat's effects */
     seq_play(1); seq_rec(1); seq.pos = 2 * 5512 + 100; f0.what = 'd'; ui_event(&f0, 100); seq.pos = 6 * 5512 + 50; f0.what = 'u'; ui_event(&f0, 110);
     assert(seq.pat[0].nev == 1 && seq.pat[0].ev[0].step == 2 && seq.pat[0].ev[0].len == 4 && seq.pat[0].ev[0].fx == fx_page[0][1] && fx_sounding() == -1);
     seq.pos = 3 * 5512; seq_block(); assert(fx_sounding() == fx_page[0][1]); seq.pos = 7 * 5512; seq_block(); assert(fx_sounding() == -1);
     seq_undo(); assert(seq.pat[0].nev == 0 && seq.ntake == 0);
-    seq.pat[0].nev = 3; k = (event_t){ 'k', 'd', KEY_RETURN, 0 }; ui_event(&k, 200); k.what = 'u'; ui_event(&k, 210); assert(seq.pat[0].nev == 0);
+    seq.pat[0].nev = 3; press(KEY_RETURN, 200); assert(seq.pat[0].nev == 0);
     seq_play(0); seq_rec(0); assert(fx_sounding() == -1);
     /* export: the bar, or both of a chain, to a numbered file; the transport comes back as it was */
     { seq_init(); engine_init(); for (int p = 0; p < NPAD; ++p) if (p != 2) sound_swap(p, 0, 0, "", 0);
@@ -334,9 +371,9 @@ int main(void) {
       assert(xn == seq_step_frames() * BAR); { int q = 0; for (int i = 0; i < xn; ++i) q |= x[i]; assert(q); } free(x);
       seq.song[0] = 0, seq.song[1] = 1, seq.nsong = 2; assert(export_pattern(nm, sizeof nm) && !strcmp(nm, "1-2.wav") && seq.cur == 1);
       snprintf(pth, sizeof pth, "%s/media/Music/Groovebox/1-2.wav", root); xn = wav_read(pth, &x); assert(xn == 2 * seq_step_frames() * BAR); free(x); }
-    /* a strip tap in PATT asks for one, run off the lock once the strip has said so */
-    seq_init(); engine_init(); ui_init(); ui.mode = M_PATT; e = (event_t){ 't', 'd', 200, 5 }; ui_event(&e, 10); assert(ui.job == J_EXPORT && !ui.job_shown);
-    ui_tick(11); assert(ui.job == J_EXPORT); { static pix cv[W * H]; ui_render(cv, 12); } assert(ui.job_shown); ui_tick(13); assert(!ui.job && !strncmp(ui.msg, "Saved 1-3", 9));
+    /* Save as WAV asks for one, run off the lock once the hint line has said so */
+    seq_init(); engine_init(); ui_init(); ui.mode = M_SONG; tap_left(5, 3, 10); assert(ui.job == J_EXPORT && !ui.job_shown);
+    ui_tick(11); assert(ui.job == J_EXPORT); { static pix cv[W * H]; ui_render(cv, 12); } assert(ui.job_shown); ui_tick(13); assert(!ui.job && !strncmp(ui.msg, "Saved Music/Groovebox/1-3", 25));
 
     /* ---- the sequencer's depth ---- */
     int bar = seq_step_frames() * BAR;
@@ -367,7 +404,7 @@ int main(void) {
     seq_init(); seq_song_add(2); seq_song_add(5); assert(seq.nsong == 3 && !seq.song[0] && seq.song[1] == 2 && seq.song[2] == 5 && seq_song_frames() == 3 * bar);
     seq_play(1); hits_in(5, bar); assert(seq.cur == 2); hits_in(5, bar); assert(seq.cur == 5); hits_in(5, bar); assert(!seq.cur);
     seq_play(0); seq.cur = 5; seq_play(1); assert(seq.song_at == 2 && seq.cur == 5); seq_play(0);
-    seq_song_pop(); assert(seq.nsong == 2); seq_song_pop(); assert(!seq.nsong);
+    seq_song_pop(); assert(seq.nsong == 2); seq_song_pop(); assert(seq.nsong == 1); seq_song_pop(); assert(!seq.nsong);
     { seq_init(); seq_song_add(0); assert(seq.nsong == 1); seq_play(1); assert(!seq.cur); seq_play(0); } /* one entry is no song yet */
     /* a transient chop finds the hits: eight of them, inside a window, in order, the rest halved to fill the pads */
     { int n = FS * 4, at[NPAD + 1], c; short *p = calloc((size_t)n, sizeof *p); static const int hit[8] = { 17640, 35280, 52920, 70560, 88200, 105840, 123480, 141120 };
@@ -446,57 +483,73 @@ int main(void) {
       unlink(pf); rmdir(pd); memset(pad_src, 0, sizeof pad_src); }
 
     /* ---- the panel ---- */
-    /* KEYS: a pad is the scale's note from the key, on the selected sound, held until lifted */
+    /* every control clears the glass */
+    { for (int i = 0; i < 3; ++i) on_glass(pill_x(i), TOP_Y, PILL_W, BAND_H);
+      for (int m = 0; m < M_N; ++m) on_glass(tab_x(m), TABS_Y, TAB_W, BAND_H);
+      on_glass(EDGE, TABS_Y, W - 2 * EDGE, BAND_H); on_glass(SIDE, HINT_Y, BODY_W, HINT_H);
+      for (int i = 0; i < 2; ++i) on_glass(ARROW_X + i * (ARROW_W + 4), HINT_Y + 1, ARROW_W, BAND_H);
+      for (int i = 0; i < NPAD; ++i) on_glass(cell_x(i), cell_y(i), CELL_W, CELL_H);
+      for (int i = 0; i < BOXES; ++i) on_glass(box_x(i), box_y(i), BOX_W, BOX_H);
+      for (int c = 4; c <= 5; ++c) for (int i = 0; i < c; ++i) on_glass(SIDE, left_y(c, i), LEFT_W, left_h(c));
+      for (int r = 0; r < LIST_ROWS; ++r) on_glass(SIDE, BODY_Y + r * LIST_ROW, LEFT_W, LIST_ROW - 2);
+      for (int r = 0; r < PICK_ROWS; ++r) on_glass(SIDE, BODY_Y + r * ROW_H, BODY_W, ROW_H - 2); }
+    /* a project with no steps starts with a beat; one with any keeps what it has */
+    seq_init(); seq_starter(); assert(seq.pat[0].s[0][0].on && seq.pat[0].s[0][12].on && seq.pat[0].s[1][4].on && !seq.pat[0].s[1][0].on && seq.pat[0].s[2][2].on);
+    seq_init(); seq.pat[5].s[9][9].on = 1; seq_starter(); assert(!seq.pat[0].s[0][0].on);
+    /* Notes: a pad is the scale's note from the key, on the selected sound, held until lifted */
     clear_pads(); seq_init(); engine_init(); ui_init(); memset(&pick, 0, sizeof pick);
-    sound_swap(0, tone_pcm(200), 200, "T", 0); seq.key = 2, seq.scale = 3; ui.mode = M_KEYS; tap_pad(2, 10);
+    sound_swap(0, tone_pcm(200), 200, "T", 0); seq.key = 2, seq.scale = 3; ui.mode = M_PADS; ui.pads = PADS_NOTES; tap_pad(2, 10);
     assert(voices[0].inc == (int)(65536 * exp2f((2 + 5) / 12.0f)) && seq_scale_note(5) == 12);
     { char nm[8]; note_name(-3, nm, sizeof nm); assert(!strcmp(nm, "A2")); note_name(0, nm, sizeof nm); assert(!strcmp(nm, "C3")); note_name(13, nm, sizeof nm); assert(!strcmp(nm, "C#4")); }
-    source_synth(1, 0, 0); ui.sound = 1; { event_t t = tap_of(pad_x(0) + 5, pad_y(0) + 5, 'd'); ui_event(&t, 20); assert(voices[1].on && voices[1].gate == -1); t.what = 'u'; ui_event(&t, 30); assert(!voices[1].gate); }
-    /* with REC on and the transport running the note lands on its step, its pitch kept */
+    source_synth(1, 0, 0); ui.sound = 1; { event_t t = tap_of(cell_x(0) + 5, cell_y(0) + 5, 'd'); ui_event(&t, 20); assert(voices[1].on && voices[1].gate == -1); t.what = 'u'; ui_event(&t, 30); assert(!voices[1].gate); }
+    /* with Record on and the beat running the note lands on its step, its pitch kept */
     engine_stop(1); seq_play(1); seq_rec(1); seq.pos = 5512 + 100; ui.sound = 0; tap_pad(4, 40); assert(seq.pat[0].s[0][1].on && seq.pat[0].s[0][1].pitch == 2 + seq_scale_note(4)); seq_play(0); seq_rec(0);
-    /* the wheel is the key; the strip's name makes it the scale */
-    { event_t t = { 'w', 0, -13, 0 }; int was = seq.key; ui_event(&t, 50); assert(seq.key == was + 1); tap_at(200, 5, 60); assert(ui.keys_scale); ui_event(&t, 70); assert(seq.scale == 4 && seq.key == was + 1); }
+    /* the wheel changes the sound the notes are on */
+    ui.sound = 0; ui_event(&w, 50); assert(ui.sound == 1);
     /* on a break the pads are its slices and tricks: the eleventh is the last that means anything (ASan) */
     assert(load_break_builtin(3, 0)); ui.sound = 3; tap_pad(0, 80); tap_pad(10, 90); tap_pad(15, 100);
-    /* WRITE: a second tap on the tab is the second layer; a tap walks the ratchet, the name walks the parameter */
-    clear_pads(); seq_init(); engine_init(); ui_init(); memset(&pick, 0, sizeof pick); ui.mode = M_WRITE; ui.sound = 1;
-    tap_tab(M_WRITE, 10); assert(ui.layer == 1 && ui.mode == M_WRITE); tap_tab(M_PLAY, 15); assert(ui.mode == M_PLAY && ui.layer == 1); tap_tab(M_WRITE, 20); assert(ui.layer == 1);
-    { const step_t *s = &seq.pat[0].s[1][3]; tap_pad(3, 30); assert(s->on && s->ratchet == 2); tap_pad(3, 31); tap_pad(3, 32); assert(s->ratchet == 4); tap_pad(3, 33); assert(s->ratchet == 1 && s->on);
-      tap_at(200, 5, 40); assert(ui.groove == G_CHANCE); tap_pad(3, 41); assert(s->chance == 75); tap_pad(3, 42); tap_pad(3, 43); assert(s->chance == 25); tap_pad(3, 44); assert(!s->chance);
-      event_t h = tap_of(pad_x(3) + 5, pad_y(3) + 5, 'd'), wh = { 'w', 0, 13, 0 }; ui_event(&h, 50); ui_event(&wh, 51); assert(s->chance == 95); h.what = 'u'; ui_event(&h, 52); assert(s->chance == 95);
-      tap_at(200, 5, 60); tap_pad(3, 61); assert(s->flags == NOTE_ACCENT); tap_at(200, 5, 62); tap_pad(3, 63); assert(s->flags == (NOTE_ACCENT | NOTE_SLIDE));
-      tap_at(200, 5, 64); assert(ui.groove == G_RATE); { event_t up = { 'w', 0, -13, 0 }; ui_event(&up, 65); assert(seq.pat[0].rate[1] == 1); } tap_pad(9, 66); assert(!seq.pat[0].s[1][9].on);
-      /* off in the first layer, everything goes with it */
-      tap_tab(M_WRITE, 70); assert(!ui.layer); tap_pad(3, 71); assert(!s->on && !s->chance && !s->flags && s->ratchet == 0 && s->level == UNSET); }
-    /* Prev and Next turn the pages; a step on a later page brings the track there, a short track within its page stays short */
-    press(KEY_NEXT, 80); assert(ui.page == 1 && seq.cue == -1 && !seq.cur); tap_pad(0, 82); assert(seq.pat[0].s[1][16].on && seq.pat[0].len[1] == 32);
-    press(KEY_NEXT, 84); press(KEY_NEXT, 85); press(KEY_NEXT, 86); assert(ui.page == 3); press(KEY_PREV, 87); press(KEY_PREV, 88); press(KEY_PREV, 89); press(KEY_PREV, 90); assert(!ui.page);
-    seq.pat[0].len[1] = 12; tap_pad(14, 91); assert(seq.pat[0].s[1][14].on && seq.pat[0].len[1] == 12);
-    { static pix cv[W * H]; seq_play(1); ui.page = 3; ui_render(cv, 95); seq_play(0); ui.page = 0; }
-    /* SOUND 2: a sample has none; a machine shows its tiles, the wheel walks the presets, New writes and Return undoes */
-    clear_pads(); seq_init(); engine_init(); ui_init(); memset(&pick, 0, sizeof pick); sound_swap(0, tone_pcm(200), 200, "T", 0); ui.mode = M_SOUND;
-    tap_tab(M_SOUND, 10); assert(!ui.sound2);
-    source_synth(1, 0, 0); ui.sound = 1; tap_tab(M_SOUND, 20); assert(sound2_on()); ui.tile = SY_PRESET;
-    { char before[32]; snprintf(before, sizeof before, "%s", sounds[1].smp.name); event_t up = { 'w', 0, -13, 0 }; ui_event(&up, 30); assert(sounds[1].preset == 1 && strcmp(before, sounds[1].smp.name)); }
-    tap_pad(SY_NEW, 40); { int on = 0; for (int i = 0; i < BAR; ++i) on += seq.pat[0].s[1][i].on; assert(on); } press(KEY_RETURN, 50); { int on = 0; for (int i = 0; i < BAR; ++i) on += seq.pat[0].s[1][i].on; assert(!on); }
-    { event_t h = tap_of(pad_x(0) + 5, pad_y(0) + 5, 'd'), up = { 'w', 0, -13, 0 }; int was = source_get(1, 0); ui_event(&h, 60); ui_event(&up, 61); assert(source_get(1, 0) >= was); h.what = 'u'; ui_event(&h, 62); }
+    /* Track options: Steps makes pages, the keys and the arrows turn them, a short track keeps its cells */
+    clear_pads(); seq_init(); engine_init(); ui_init(); memset(&pick, 0, sizeof pick); ui.sound = 1;
+    tap_left(5, 4, 10); assert(ui.over == O_TRACK); tap_box(T_STEPS, 12);
+    for (int i = 0; i < 16; ++i) ui_event(&w, 13);
+    assert(seq.pat[0].len[1] == 32 && track_pages() == 2);
+    press(KEY_RETURN, 14); assert(!ui.over);
+    press(KEY_NEXT, 16); assert(ui.page == 1 && !seq.cur && seq.cue == -1); tap_pad(0, 18); assert(seq.pat[0].s[1][16].on);
+    press(KEY_NEXT, 19); assert(ui.page == 1); press(KEY_PREV, 20); assert(!ui.page);
+    tap_at(ARROW_X + ARROW_W + 10, HINT_Y + 5, 21); assert(ui.page == 1); tap_at(ARROW_X + 5, HINT_Y + 5, 22); assert(!ui.page);
+    ui.page = 1; seq.pat[0].len[1] = 12; { static pix cv[W * H]; ui_render(cv, 23); } assert(!ui.page);
+    tap_pad(14, 25); assert(!seq.pat[0].s[1][14].on); tap_pad(11, 26); assert(seq.pat[0].s[1][11].on);
+    tap_left(5, 4, 27); tap_box(T_SPEED, 28); ui_event(&w, 29); assert(seq.pat[0].rate[1] == 1);
+    /* Clear steps, and Undo brings them back; no tune boxes on a plain sample */
+    { int id[32]; assert(boxes(id) == 4); tap_box(T_CLEAR, 30); assert(!seq.pat[0].s[1][11].on); tap_box(T_UNDO, 31); assert(seq.pat[0].s[1][11].on); }
+    press(KEY_RETURN, 32); { static pix cv[W * H]; seq_play(1); ui.page = 0; ui_render(cv, 95); seq_play(0); }
+    /* the Sound tab: a box is tapped then turned; a sample's lead with Volume, a synth's with its preset; no action among them */
+    clear_pads(); seq_init(); engine_init(); ui_init(); memset(&pick, 0, sizeof pick); sound_swap(0, tone_pcm(200), 200, "T", 0); tap_tab(M_SOUND, 10); assert(ui.mode == M_SOUND);
+    tap_box(1, 12); ui_event(&w, 13); assert(sounds[0].p[P_PITCH] == 1 && sounds[0].p[P_LEVEL] == 100); tap_left(5, 4, 14); assert(ui.box_page == 1 && ui.box == BOXES); tap_box(4, 15); ui_event(&w, 16); assert(sounds[0].p[P_REVERSE] == 1); tap_left(5, 4, 17); assert(!ui.box_page);
+    source_synth(1, 0, 0); press(KEY_NEXT, 20); assert(ui.sound == 1);
+    { int id[32], c = boxes(id); tile_t t; assert(id[0] == MACH + SY_PRESET); for (int i = 0; i < c; ++i) if (id[i] >= MACH) { assert(source_tile(1, id[i] - MACH, &t) && !t.action); } }
+    tap_box(0, 21); { char before[32]; snprintf(before, sizeof before, "%s", sounds[1].smp.name); ui_event(&w, 30); assert(sounds[1].preset == 1 && strcmp(before, sounds[1].smp.name)); }
+    /* a tune: Make writes, Undo takes it back, Return from the page isn't an undo */
+    tap_tab(M_BEAT, 40); tap_left(5, 4, 41); { int id[32]; assert(boxes(id) == 7 && id[4] == T_MAKE); }
+    { int on = 0; tap_box(T_MAKE, 42); for (int i = 0; i < BAR; ++i) on += seq.pat[0].s[1][i].on; assert(on); press(KEY_RETURN, 43); assert(!ui.over); on = 0; for (int i = 0; i < BAR; ++i) on += seq.pat[0].s[1][i].on; assert(on);
+      press(KEY_RETURN, 44); on = 0; for (int i = 0; i < BAR; ++i) on += seq.pat[0].s[1][i].on; assert(!on && !strcmp(ui.msg, "Undone")); }
     all_screens(70);
-    /* FX past its effects is the bus: a tile held and turned, the page's wheel back again (ASan on the pads) */
-    ui.mode = M_FX; { event_t up = { 'w', 0, -13, 0 }, dn = { 'w', 0, 13, 0 }; for (int i = 0; i < 4; ++i) ui_event(&up, 80); assert(ui.fx_page == FX_PAGES);
-      event_t h = tap_of(pad_x(0) + 5, pad_y(0) + 5, 'd'); ui_event(&h, 90); assert(fx_sounding() == -1); ui_event(&up, 91); assert(x0x_bus_get(0) == 1); h.what = 'u'; ui_event(&h, 92); assert(ui.fx_page == FX_PAGES);
-      x0x_bus_set(0, 0); ui_event(&dn, 93); assert(ui.fx_page == FX_PAGES - 1); }
+    /* the settings: swing by fives, key, scale, and the bus's boxes */
+    ui.mode = M_SONG; tap_left(5, 4, 80); assert(ui.over == O_SET); tap_box(X_SWING, 81); ui_event(&w, 82); assert(seq.swing == 5); tap_box(X_KEY, 83); ui_event(&w, 84); assert(seq.key == -2); tap_box(X_SCALE, 85); ui_event(&w, 86); assert(seq.scale == 1);
+    tap_box(3, 87); ui_event(&w, 88); assert(x0x_bus_get(0) == 1); x0x_bus_set(0, 0); tap_left(5, 4, 89); assert(ui.box_page == 1); press(KEY_RETURN, 90); assert(!ui.over);
     /* the picker's sources: an engine and a preset, back a step, a drum, the bass, a loop */
-    clear_pads(); seq_init(); engine_init(); ui_init(); memset(&pick, 0, sizeof pick); ui.mode = M_SOUND; ui.sound = 4; pick_open(); ui_tick(10);
-    centre_on_row(0, 20); assert(pick.menu == PM_ENGINE && pick.n == SYNTH_ENGINES); centre_on_row(3, 22); assert(pick.menu == PM_PRESET && pick.engine == 3 && pick.n == synth_presets(3));
-    press(KEY_RETURN, 24); assert(pick.menu == PM_ENGINE && pick.cur == 3); press(KEY_CENTRE, 26); centre_on_row(1, 28); assert(!pick.open && ui.job == 'y');
-    run_job(30); assert(sounds[4].src == SRC_SYNTH && sounds[4].sub == 3 && sounds[4].preset == 1 && ui.sound2 && !strcmp(ui.msg, "Loaded"));
-    pick_open(); ui_tick(40); centre_on_row(1, 41); assert(pick.menu == PM_VOICE && pick.n == NPAD && !strcmp(pick.row[12].name, "Kick Tight")); centre_on_row(12, 43); run_job(45); assert(sounds[4].src == SRC_909 && sounds[4].sub == kit_sub(SRC_909, 0) && !strcmp(sounds[4].smp.name, "Kick Tight"));
-    pick_open(); ui_tick(50); centre_on_row(3, 51); run_job(53); assert(sounds[4].src == SRC_303);
-    pick_open(); ui_tick(60); centre_on_row(4, 61); assert(pick.menu == PM_BREAK && pick.n == 2); press(KEY_RETURN, 62); ui_tick(63); assert(pick.menu == PM_DIR && pick.n == 13);
-    centre_on_row(4, 64); centre_on_row(1, 65); run_job(67); assert(sounds[4].src == SRC_BREAK && !strcmp(sounds[4].smp.name, "Break Fill"));
-    sound_swap(7, tone_pcm(FS), FS, "Loop", 0); ui.sound = 7; pick_open(); ui_tick(70); centre_on_row(4, 71); assert(pick.n == 3 && pick.row[2].kind == 't'); centre_on_row(2, 73); run_job(75); assert(sounds[7].src == SRC_BREAK && sounds[7].smp.pcm);
+    clear_pads(); seq_init(); engine_init(); ui_init(); memset(&pick, 0, sizeof pick); ui.sound = 4; pick_open();
+    centre_on_row(R_SYNTHS, 20); assert(pick.menu == PM_ENGINE && pick.n == SYNTH_ENGINES); centre_on_row(3, 22); assert(pick.menu == PM_PRESET && pick.engine == 3 && pick.n == synth_presets(3));
+    press(KEY_RETURN, 24); assert(pick.menu == PM_ENGINE && pick.cur == 3); press(KEY_CENTRE, 26); centre_on_row(1, 28); assert(pick.open && ui.job == 'y'); /* it stays open to try the next */
+    run_job(30); assert(sounds[4].src == SRC_SYNTH && sounds[4].sub == 3 && sounds[4].preset == 1 && !strcmp(ui.msg, "Loaded")); pick.open = 0;
+    pick_open(); centre_on_row(R_MACHINE, 41); assert(pick.menu == PM_MACHINE); centre_on_row(0, 42); assert(pick.menu == PM_VOICE && pick.n == NPAD && !strcmp(pick.row[12].name, "Kick Tight")); centre_on_row(12, 43); run_job(45); assert(sounds[4].src == SRC_909 && sounds[4].sub == kit_sub(SRC_909, 0) && !strcmp(sounds[4].smp.name, "Kick Tight"));
+    press(KEY_RETURN, 46); assert(pick.menu == PM_MACHINE && !pick.cur); press(KEY_RETURN, 47); assert(pick.menu == PM_ROOT && pick.cur == R_MACHINE); pick.open = 0;
+    pick_open(); centre_on_row(R_BASS, 51); assert(!pick.open); run_job(53); assert(sounds[4].src == SRC_303);
+    pick_open(); centre_on_row(R_LOOPS, 61); assert(pick.menu == PM_BREAK && pick.n == 2); press(KEY_RETURN, 62); assert(pick.menu == PM_ROOT && pick.cur == R_LOOPS);
+    centre_on_row(R_LOOPS, 64); centre_on_row(1, 65); run_job(67); assert(sounds[4].src == SRC_BREAK && !strcmp(sounds[4].smp.name, "Break Fill"));
+    sound_swap(7, tone_pcm(FS), FS, "Loop", 0); ui.sound = 7; pick_open(); centre_on_row(R_LOOPS, 71); assert(pick.n == 3 && pick.row[2].kind == 't'); centre_on_row(2, 73); run_job(75); assert(sounds[7].src == SRC_BREAK && sounds[7].smp.pcm);
     /* a live kit from the kit rows */
-    pick_open(); ui_tick(80); assert(pick.row[6].kind == 'k' && !strcmp(pick.row[6].name, KIT_808_LIVE)); centre_on_row(6, 81); run_job(83); assert(sounds[0].src == SRC_808 && !strcmp(kit_name, KIT_808_LIVE));
+    pick_open(); centre_on_row(R_KITS, 80); ui_tick(81); assert(pick.menu == PM_KITS && pick.row[1].kind == 'k' && !strcmp(pick.row[1].name, KIT_808_LIVE)); centre_on_row(1, 82); run_job(83); assert(sounds[0].src == SRC_808 && !strcmp(kit_name, KIT_808_LIVE));
     all_screens(85);
     strcpy(kit_name, "default");
     /* the drop server: only under its code, and whatever the sender says its name is stays a plain name in Drops */
@@ -515,11 +568,11 @@ int main(void) {
       snprintf(req, sizeof req, "POST /%s/up?name=evil.m4a HTTP/1.1\r\nContent-Length: 2\r\n\r\n", drop_code()); assert(http(req, "hi") == 200 && drop_take(got, sizeof got) && strstr(got, "evil-1.m4a"));
       drop_stop(); }
     /* the phone screen: its row starts the server, an arrival goes to the file's choices, leaving stops it */
-    ui.sound = 2; ui.mode = M_SOUND; pick_open(); ui_tick(100); centre_on_row(5, 101); assert(pick.menu == PM_DROP); { static pix cv[W * H]; ui_tick(102); assert(pick.drop_on); ui_render(cv, 103); }
-    { char req[300]; snprintf(req, sizeof req, "POST /%s/up?name=memo.wav HTTP/1.1\r\nContent-Length: 2\r\n\r\n", drop_code()); assert(http(req, "hi") == 200); ui_tick(104); assert(pick.menu == PM_ASK && strstr(pick.file, "memo.wav")); ui_tick(105); assert(!pick.drop_on); press(KEY_RETURN, 106); ui_tick(107); assert(pick.menu == PM_DIR); }
-    centre_on_row(5, 108); ui_tick(109); assert(pick.drop_on); press(KEY_RETURN, 110); ui_tick(111); assert(!pick.drop_on && pick.menu == PM_DIR);
-    /* switching tab leaves it too, and an idle minute on it is no reason to quit */
-    centre_on_row(5, 112); ui_tick(113); assert(pick.drop_on); ui_tick(113 + IDLE_QUIT_MS + 1); assert(!ui.quit); tap_tab(M_PLAY, 114 + IDLE_QUIT_MS); ui_tick(115 + IDLE_QUIT_MS); assert(!pick.drop_on && !pick.open);
+    ui.sound = 2; ui.mode = M_SOUND; pick_open(); centre_on_row(R_PHONE, 101); assert(pick.menu == PM_DROP); { static pix cv[W * H]; ui_tick(102); assert(pick.drop_on); ui_render(cv, 103); }
+    { char req[300]; snprintf(req, sizeof req, "POST /%s/up?name=memo.wav HTTP/1.1\r\nContent-Length: 2\r\n\r\n", drop_code()); assert(http(req, "hi") == 200); ui_tick(104); assert(pick.menu == PM_ASK && strstr(pick.file, "memo.wav")); ui_tick(105); assert(!pick.drop_on); press(KEY_RETURN, 106); ui_tick(107); assert(pick.menu == PM_DIR); press(KEY_RETURN, 107); assert(pick.menu == PM_ROOT); }
+    centre_on_row(R_PHONE, 108); ui_tick(109); assert(pick.drop_on); press(KEY_RETURN, 110); ui_tick(111); assert(!pick.drop_on && pick.menu == PM_ROOT);
+    /* Back leaves it too, and an idle minute on it is no reason to quit */
+    centre_on_row(R_PHONE, 112); ui_tick(113); assert(pick.drop_on); ui_tick(113 + IDLE_QUIT_MS + 1); assert(!ui.quit); tap_at(100, TABS_Y + 5, 114 + IDLE_QUIT_MS); ui_tick(115 + IDLE_QUIT_MS); assert(!pick.drop_on && pick.menu == PM_ROOT); pick.open = 0;
     clear_pads();
     { char cmd[64]; snprintf(cmd, sizeof cmd, "rm -rf '%s'", root); assert(!system(cmd)); }
     for (int p = 0; p < NPAD; ++p) sound_swap(p, 0, 0, "", 0);

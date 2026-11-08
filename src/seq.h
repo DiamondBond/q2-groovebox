@@ -26,7 +26,7 @@ typedef struct {
 typedef struct {
     pattern_t pat[NPATT];
     int bpm, swing;   /* 40..240; 0..100, the off steps delayed up to a third of a step */
-    int key, scale;   /* KEYS and the generator: semitones from C3, -24..24; NSCALE */
+    int key, scale;   /* Notes and the generator: semitones from C3, -24..24; NSCALE */
     int cur, cue;     /* the pattern playing; the one cued for its end, or -1 */
     int song[NSONG];  /* the patterns in turn, looping, when there are two or more */
     int nsong, song_at;
@@ -35,7 +35,7 @@ typedef struct {
     unsigned bar;     /* bars since play began */
     unsigned pbar;    /* since this pattern began: a long track's page, a short one's drift */
     struct { signed char pat, pad, step; } take[256]; /* pad -1: step is an FX event's index */
-    int ntake; /* what this REC pass wrote, for Return's undo */
+    int ntake; /* what this REC pass wrote, for Undo */
     struct { int on, pat, step, start; unsigned bar; } fxrec; /* the event the finger is writing */
     struct { step_t s[NSTEP]; int pat, pad, len, valid; } gen; /* the track before TB-3PO rewrote it */
 } seq_t;
@@ -51,8 +51,8 @@ int seq_song_frames(void);          /* one pass of the song, or of the current p
 void seq_block(void);               /* CTL frames on: the steps in them sound (engine_note) */
 void seq_play(int on);
 void seq_cue(int pattern);          /* now when stopped, at the pattern's end when playing */
-void seq_tap(int pad);              /* PLAY's pad: sounds now, held; with REC on and playing, lands on its step */
-void seq_note(int pad, int pitch);  /* KEYS: the same, at a pitch, which a step keeps */
+void seq_tap(int pad);              /* a pad: sounds now, held; with REC on and playing, lands on its step */
+void seq_note(int pad, int pitch);  /* Notes: the same, at a pitch, which a step keeps */
 void seq_rec(int on);
 void seq_fx_start(int fx);          /* REC on and playing: an FX event starts, quantised */
 int seq_fx_end(void);               /* and its length is set: 1 if one was being written */
@@ -61,4 +61,5 @@ int seq_playhead(int track);        /* the step of the track sounding; -1 stoppe
 int seq_quantise(int pos);          /* the nearest sixteenth to pos frames, 0..16 */
 void seq_song_add(int pattern);     /* onto the end; the first add starts from the pattern playing */
 void seq_song_pop(void);
+void seq_starter(void);              /* a project with no steps at all starts with a plain beat */
 #endif

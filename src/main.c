@@ -51,6 +51,7 @@ int main(int argc, char **argv) {
     snprintf(project_dir, sizeof project_dir, "%s", project_path());
     mkdir(project_dir, 0755);
     project_load(project_dir);
+    seq_starter();
     kit_open(kit_name);
     pads_restore(project_dir);
     if (!plat_audio_start(render)) fprintf(stderr, "groovebox: no audio\n");

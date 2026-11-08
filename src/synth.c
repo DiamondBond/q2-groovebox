@@ -3,6 +3,7 @@
  * The host Felucca-Engines asks for: one voice a part, the part a pad, and Felucca's own envelope
  * law, as the presets were voiced against it. The sequencer has one voice a track and the panel one
  * finger, so a pad has no polyphony to lose. Its own translation unit: the engines' names are short. */
+#include <ctype.h>
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -47,9 +48,16 @@ void synth_init(void) {
     }
     memset(trk, 0, sizeof trk);
 }
-const char *synth_engine(int e) { return ENG[e]->name; }
+static const char *titled(const char *s) { /* upstream's SAW LEAD as the panel writes it; copy it before the next call */
+    static char b[32];
+    snprintf(b, sizeof b, "%s", s);
+    for (char *q = b + 1; b[0] && *q; ++q)
+        if (isalpha((unsigned char)q[-1])) *q = (char)tolower((unsigned char)*q);
+    return b;
+}
+const char *synth_engine(int e) { return titled(ENG[e]->name); }
 int synth_presets(int e) { return ENG[e]->npresets; }
-const char *synth_preset_name(int e, int p) { return ENG[e]->presets[p].name; }
+const char *synth_preset_name(int e, int p) { return titled(ENG[e]->presets[p].name); }
 void synth_preset(int e, int p, int *vals, int *echo, int *reverb) {
     const preset_t *r = &ENG[e]->presets[p];
     for (int k = 0; k < 8; ++k) vals[k] = r->e[k];

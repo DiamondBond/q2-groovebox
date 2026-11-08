@@ -308,12 +308,15 @@ void x0x_bus_reset(void) {
     for (int i = 1; i < BUS_TILES; ++i) fxbus_set(&bus, bus_map[i], bus_pot[i]);
 }
 int x0x_bus_tile(int i, tile_t *t) {
-    static const char *const kinds[2] = { "SLOOP", "X0X" };
+    static const char *const kinds[2] = { "1", "2" };
+    static const char *const plain[BUS_TILES] = { "FX type", "Distort", "Drive", "Compress", "Rev time", "Rev tone", "Rev thin", "Rev level",
+                                                  "Echo time", "Repeats", "Echo tone", "Echo level", "Echo thin", "Echo type", "Wear", "Ping-pong" };
     memset(t, 0, sizeof *t);
     if (i < 0 || i >= BUS_TILES) return 0;
-    if (!i) { t->name = "Bus", t->max = 1, t->names = kinds; return 1; }
+    t->name = plain[i];
+    if (!i) { t->max = 1, t->names = kinds; return 1; }
     const x0x_param_t *p = fxbus_param(bus_map[i]);
-    t->name = p->name, t->max = p->max, t->names = p->names;
+    t->max = p->max, t->names = p->names;
     return 1;
 }
 int x0x_bus_get(int i) { return i ? bus_pot[i] : bus_x0x; }

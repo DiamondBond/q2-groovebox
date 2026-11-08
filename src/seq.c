@@ -153,7 +153,7 @@ void seq_cue(int pattern) {
 }
 void seq_rec(int on) {
     seq.rec = on;
-    seq.ntake = 0;
+    if (on) seq.ntake = 0; /* a take stays undoable after Record goes off */
 }
 void seq_note(int pad, int pitch) {
     if (!seq.playing || !seq.rec) { engine_note(pad, UNSET, pitch, UNSET, UNSET, 0, -1); return; }
@@ -223,4 +223,15 @@ void seq_song_add(int pattern) {
     if (!seq.nsong && pattern != seq.cur) seq.song[seq.nsong++] = seq.cur;
     seq.song[seq.nsong++] = pattern;
 }
-void seq_song_pop(void) { if (seq.nsong) --seq.nsong; if (seq.nsong < 2) seq.nsong = 0; }
+void seq_song_pop(void) { if (seq.nsong) --seq.nsong; }
+void seq_starter(void) {
+    for (int p = 0; p < NPATT; ++p)
+        for (int t = 0; t < NPAD; ++t)
+            for (int s = 0; s < NSTEP; ++s)
+                if (seq.pat[p].s[t][s].on) return;
+    for (int s = 0; s < BAR; s += 2) {
+        seq.pat[0].s[2][s].on = 1; /* the default kit's hat, */
+        if (!(s % 4)) seq.pat[0].s[0][s].on = 1; /* kick */
+        if (s % 8 == 4) seq.pat[0].s[1][s].on = 1; /* and snare */
+    }
+}

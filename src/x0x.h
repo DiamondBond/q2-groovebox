@@ -28,7 +28,7 @@ typedef struct { int density, root, scale, base_oct; unsigned seed; } x0x_gen_t;
 void x0x_line(x0x_step_t *s, int len, const x0x_gen_t *g);
 void x0x_mutate(x0x_step_t *s, int len, const x0x_gen_t *g, unsigned *rng);
 unsigned x0x_seed(unsigned entropy);
-/* the bus: FX's third page */
+/* the bus: the Settings boxes */
 #define BUS_TILES 16
 void x0x_bus_reset(void);
 int x0x_bus_tile(int i, tile_t *t);

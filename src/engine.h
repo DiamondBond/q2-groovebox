@@ -10,18 +10,18 @@ typedef struct {
     char name[32];
     int loaded; /* from Load, kept beside the project as pad%02d.wav */
 } sample_t;
-/* SOUND's sixteen tiles, in pad order (Load is ui.c's) */
+/* a sound's values (P_LOAD is unused, kept for the project file's order) */
 enum { P_LEVEL, P_PAN, P_PITCH, P_FINE, P_START, P_END, P_LOOP, P_REVERSE,
        P_ATTACK, P_DECAY, P_CUTOFF, P_RESO, P_ECHO, P_REVERB, P_CHOKE, P_LOAD, P_N };
 enum { SRC_SAMPLE, SRC_SYNTH, SRC_909, SRC_808, SRC_303, SRC_BREAK, SRC_N }; /* what a pad plays */
 #define NTILE 16
-typedef struct { const char *name; int min, max; const char *const *names; int action; } tile_t; /* one of SOUND 2's */
+typedef struct { const char *name; int min, max; const char *const *names; int action; } tile_t; /* one of a machine's controls */
 enum { ACT_NONE, ACT_NEW, ACT_MUTATE };
 typedef struct {
     int p[P_N];
     sample_t smp;
     int src, sub, preset; /* SRC_*; the synth engine, or the drum in its machine; the synth's preset */
-    int e[NTILE];         /* SOUND 2's values */
+    int e[NTILE];         /* the machine's values */
 } sound_t;
 enum { NOTE_ACCENT = 1, NOTE_SLIDE = 2 };
 extern sound_t sounds[NPAD];
@@ -39,7 +39,7 @@ void engine_transport_stop(void);
 void engine_load(int percent);          /* how much of its time the audio thread is using */
 void engine_block(int *out); /* CTL frames, interleaved Q15 in int, mixed, swept, limited */
 void engine_gain(int q16);   /* the master soft volume, 65536 unity */
-void engine_sweep(int v);    /* PLAY's knob: -100 (low-pass closed) .. 0 (off) .. 100 (high-pass) */
+void engine_sweep(int v);    /* the Pads wheel: -100 (low-pass closed) .. 0 (off) .. 100 (high-pass) */
 int engine_peak(void);       /* the last block's peak, 0..32767 */
 unsigned engine_blocks(void);           /* blocks rendered since start */
 unsigned engine_last_hit(int pad);      /* the block the pad last sounded in */

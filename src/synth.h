@@ -5,7 +5,7 @@
 #define SYNTH_H
 #include "engine.h"
 #define SYNTH_ENGINES 6
-enum { SY_ATK = 8, SY_DEC, SY_SUS, SY_REL, SY_FENV, SY_PRESET, SY_NEW, SY_MUTATE }; /* SOUND 2's tiles: eight of the engine's first */
+enum { SY_ATK = 8, SY_DEC, SY_SUS, SY_REL, SY_FENV, SY_PRESET, SY_NEW, SY_MUTATE }; /* the machine's boxes: eight of the engine's first */
 void synth_init(void);
 const char *synth_engine(int e);
 int synth_presets(int e);

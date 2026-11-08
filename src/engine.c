@@ -118,7 +118,7 @@ static void voice_setup(voice_t *v, const sound_t *s, int lv, int dec, int cut) 
 void engine_note(int pad, int level, int pitch, int decay, int cutoff, int flags, int gate) {
     sound_t *s = &sounds[pad];
     voice_t *v = &voices[pad];
-    int live = s->src != SRC_SAMPLE, semis = pitch == UNSET ? s->p[P_PITCH] : pitch; /* a lock is the pitch itself, as WRITE shows it */
+    int live = s->src != SRC_SAMPLE, semis = pitch == UNSET ? s->p[P_PITCH] : pitch; /* a lock is the pitch itself, as the step shows it */
     if (s->src == SRC_BREAK || (!live && (!s->smp.pcm || s->smp.n < 2))) return;
     int note = 48 + semis, accent = flags & NOTE_ACCENT, legato = v->on && v->slide && (s->src == SRC_SYNTH || s->src == SRC_303);
     int fine = s->p[P_FINE] * 237 / 100, vel = accent ? 127 : 100;

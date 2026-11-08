@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Diamond Bond
  * The pads' sources: the sample a pad held goes (or stays, for a break), the machine starts on the
- * defaults or the project's values. SOUND 2 reads and turns them through here. */
+ * defaults or the project's values. The Sound tab reads and turns them through here. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Groovebox for Q2 Pod</title>
+<style>
+/* The look of the Q2 Pod User Guide (q2-pod, docs/manual/guide.html), cut to what a mini-guide uses. */
+@page {
+  size: 8.5in 11in;
+  margin: 0.95in 1.3in 1in 1.55in;
+  @bottom-right { content: counter(page); font: 400 8.5pt "Open Sans", sans-serif; color: #222; vertical-align: top; padding-top: 0.25in; }
+  @bottom-left  { font: 400 8.5pt "Open Sans", sans-serif; color: #2a7fcf; vertical-align: top; padding-top: 0.25in; white-space: pre; }
+}
+@page cover { margin: 0; @bottom-right { content: none; } }
+@page toc { margin-left: 1.1in; @bottom-left { content: "Contents"; padding-left: 0.45in; } }
+@page ch1 { @bottom-left { content: "Chapter 1   Getting Started"; } }
+@page ch2 { @bottom-left { content: "Chapter 2   Making a Beat"; } }
+@page ch3 { @bottom-left { content: "Chapter 3   Pads and Sounds"; } }
+@page ch4 { @bottom-left { content: "Chapter 4   Loading Sounds"; } }
+@page ch5 { @bottom-left { content: "Chapter 5   Songs and Saving"; } }
+@page ch6 { @bottom-left { content: "Chapter 6   Updating and Help"; } }
+@page :first { @bottom-left { content: none; } }
+
+* { box-sizing: border-box; }
+html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+body { margin: 0; font: 400 9.6pt/1.5 "Open Sans", "Noto Sans", sans-serif; color: #222; }
+p { margin: 0 0 0.75em; }
+b, strong { font-weight: 600; }
+code { font: 8.6pt "DejaVu Sans Mono", monospace; color: #333; }
+a { color: inherit; text-decoration: none; }
+a.link { color: #2a7fcf; }
+
+.cover { page: cover; height: 11in; position: relative; }
+.cover .logo { position: absolute; top: 1.6in; left: 50%; width: 1.5in; height: 1.5in; margin-left: -0.75in; border-radius: 0.16in; background: #101010; display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.06in; padding: 0.14in; }
+.cover .logo i { border-radius: 0.04in; }
+.cover h1 { position: absolute; top: 4.05in; width: 100%; text-align: center; margin: 0; font: 600 34pt/1.15 "Open Sans", sans-serif; color: #1d1d1f; letter-spacing: -0.5pt; }
+.cover h1 span { display: block; color: #a8a8a8; }
+.cover .fine { position: absolute; bottom: 0.8in; width: 100%; text-align: center; font-size: 8pt; color: #999; }
+
+.toc { page: toc; break-before: page; }
+.toc h1 { font: 600 22pt "Open Sans", sans-serif; margin: 0 0 0.25in 0.45in; color: #1d1d1f; }
+.toc ol { list-style: none; margin: 0; padding: 0; }
+.toc li { display: flex; gap: 0.17in; line-height: 1.32; font-size: 9.2pt; }
+.toc li .n { width: 0.28in; text-align: right; font-weight: 600; flex: none; }
+.toc li.chap { margin-top: 0.09in; font-size: 11.5pt; color: #2a7fcf; break-after: avoid; }
+.toc li.chap .n { color: #222; font-size: 9.5pt; padding-top: 2.5pt; }
+.toc li.chap:first-child { margin-top: 0; }
+
+.chapter { break-before: page; }
+.opener { display: flex; justify-content: space-between; align-items: flex-start; margin: 0.1in 0 0.45in; }
+.opener h1 { font: 600 20pt/1.2 "Open Sans", sans-serif; color: #1d1d1f; margin: 0.12in 0 0; }
+.opener .num { font: 600 64pt/0.9 "Open Sans", sans-serif; color: #1d1d1f; margin-right: -0.05in; }
+.lead { font: 400 14pt/1.35 "Open Sans", sans-serif; color: #2a7fcf; margin: 0 0 0.18in; }
+h2 { font: 400 15pt/1.25 "Open Sans", sans-serif; color: #2a7fcf; margin: 0.32in 0 0.06in; break-after: avoid; }
+h2 + p { margin-top: 0; }
+
+ul { margin: 0 0 0.8em; padding-left: 0.16in; }
+ul li { margin: 0 0 0.25em; }
+ul li::marker { content: "•  "; color: #555; }
+ol.steps { margin: 0 0 0.8em; padding-left: 0.22in; }
+ol.steps li { margin: 0 0 0.3em; padding-left: 0.04in; }
+ol.steps li::marker { font-weight: 600; color: #2a7fcf; }
+
+table { width: 100%; border-collapse: collapse; margin: 0.08in 0 0.18in; font-size: 8.6pt; line-height: 1.4; }
+thead { display: table-header-group; }
+th { background: #8e959b; color: #fff; text-align: left; font-weight: 600; padding: 3pt 6pt; }
+td { padding: 4.5pt 6pt; border-bottom: 0.6pt solid #b9bec2; vertical-align: top; }
+td:first-child { font-weight: 600; width: 26%; }
+tr { break-inside: avoid; }
+
+.note { background: #f1f2f3; border-left: 3pt solid #8e959b; padding: 7pt 10pt; margin: 0.1in 0 0.18in; font-size: 9pt; break-inside: avoid; }
+.note.important { border-left-color: #2a7fcf; }
+.note p:last-child { margin: 0; }
+.note .label { font-weight: 600; }
+
+.shots { display: flex; justify-content: center; gap: 0.25in; margin: 0.1in 0 0.2in; break-inside: avoid; }
+.shots figure, figure.one { margin: 0; text-align: center; font-size: 7.6pt; color: #666; }
+.shots img { display: block; width: 2.45in; margin: 0 auto 4pt; border-radius: 0.11in; }
+figure.one { margin: 0.1in 0 0.2in; break-inside: avoid; }
+figure.one img { display: block; width: 2.6in; margin: 0 auto 4pt; border-radius: 0.12in; }
+.legal { margin-top: 0.4in; padding-top: 0.12in; border-top: 0.6pt solid #b9bec2; font-size: 7.6pt; color: #777; }
+.m { position: absolute; font-size: 1px; color: #fff; }
+
+p, li, td { orphans: 3; widows: 3; }
+p { break-inside: avoid; }
+ul, ol, pre, .note, .shots, figure { break-inside: avoid; }
+p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ .shots), p:has(+ figure), h2 { break-after: avoid; }
+.sec { break-inside: avoid; }
+.toc ol { break-inside: auto; }
+</style>
+</head>
+<body>
+
+<section class="cover">
+  <div class="logo" role="img" aria-label="Sixteen coloured pads"><i style="background:#e05050"></i><i style="background:#e08a40"></i><i style="background:#e0c040"></i><i style="background:#a0d040"></i><i style="background:#50d060"></i><i style="background:#40d0a0"></i><i style="background:#40c0d0"></i><i style="background:#4090e0"></i><i style="background:#5060e0"></i><i style="background:#9050e0"></i><i style="background:#d050d0"></i><i style="background:#e05090"></i><i style="background:#c08060"></i><i style="background:#80a080"></i><i style="background:#6080b0"></i><i style="background:#b0b0b0"></i></div>
+  <h1>Groovebox<span>for Q2 Pod</span></h1>
+  <div class="fine">A mini-guide to the app · version 1.4</div>
+</section>
+
+<section class="toc">
+  <h1>Contents</h1>
+  <ol>
+    <li class="chap"><span class="n">{{p:c1}}</span><a href="#c1">Chapter 1: Getting Started</a></li>
+    <li><span class="n">{{p:about}}</span><a href="#about">Groovebox</a></li>
+    <li><span class="n">{{p:install}}</span><a href="#install">Installing Groovebox</a></li>
+    <li><span class="n">{{p:first}}</span><a href="#first">Your first beat</a></li>
+    <li><span class="n">{{p:keys}}</span><a href="#keys">The keys</a></li>
+
+    <li class="chap"><span class="n">{{p:c2}}</span><a href="#c2">Chapter 2: Making a Beat</a></li>
+    <li><span class="n">{{p:steps}}</span><a href="#steps">Sounds and steps</a></li>
+    <li><span class="n">{{p:step}}</span><a href="#step">Inside a step</a></li>
+    <li><span class="n">{{p:options}}</span><a href="#options">Options</a></li>
+
+    <li class="chap"><span class="n">{{p:c3}}</span><a href="#c3">Chapter 3: Pads and Sounds</a></li>
+    <li><span class="n">{{p:pads}}</span><a href="#pads">Playing the pads</a></li>
+    <li><span class="n">{{p:effects}}</span><a href="#effects">Effects and recording</a></li>
+    <li><span class="n">{{p:sound}}</span><a href="#sound">Shaping a sound</a></li>
+
+    <li class="chap"><span class="n">{{p:c4}}</span><a href="#c4">Chapter 4: Loading Sounds</a></li>
+    <li><span class="n">{{p:load}}</span><a href="#load">Load sound</a></li>
+    <li><span class="n">{{p:kit}}</span><a href="#kit">Your own kit</a></li>
+    <li><span class="n">{{p:card}}</span><a href="#card">Music on the card</a></li>
+    <li><span class="n">{{p:phone}}</span><a href="#phone">From your phone</a></li>
+
+    <li class="chap"><span class="n">{{p:c5}}</span><a href="#c5">Chapter 5: Songs and Saving</a></li>
+    <li><span class="n">{{p:song}}</span><a href="#song">Beats and songs</a></li>
+    <li><span class="n">{{p:wav}}</span><a href="#wav">Save WAV</a></li>
+    <li><span class="n">{{p:settings}}</span><a href="#settings">Settings</a></li>
+    <li><span class="n">{{p:projects}}</span><a href="#projects">Your projects</a></li>
+
+    <li class="chap"><span class="n">{{p:c6}}</span><a href="#c6">Chapter 6: Updating and Help</a></li>
+    <li><span class="n">{{p:update}}</span><a href="#update">Updating and removing</a></li>
+    <li><span class="n">{{p:trouble}}</span><a href="#trouble">Troubleshooting</a></li>
+  </ol>
+</section>
+
+<section class="chapter" style="page: ch1">
+  <div class="opener"><h1 id="c1">Getting Started</h1><div class="num">1</div></div>
+  <p class="lead">Install Groovebox and make your first beat.</p>
+
+  <div class="sec">
+  <h2 id="about">Groovebox</h2>
+  <p><b>Library → Games → Groovebox</b> turns the Q2 into a drum machine and step sequencer: sixteen sounds, each a sample, a synth or a live 909, 808, 303 or drum loop; a sequencer with rolls, chance and songs; and punch-in effects, echo and reverb. It isn’t in the firmware: it runs from the microSD card.</p>
+  <p>Your music stops while it’s open, and its sound goes to whatever Q2 Pod was playing through: the headphone jack, Bluetooth or a USB DAC. The volume starts where Q2 Pod’s was.</p>
+  </div>
+
+  <div class="sec">
+  <h2 id="install">Installing Groovebox</h2>
+  <p>You need Q2 Pod 1.7.2 or later. The easy way is over Wi-Fi: open <b>System settings → App Store</b> and press Centre on <b>Groovebox</b>.</p>
+  <p>Or by hand:</p>
+  <ol class="steps">
+    <li>Download <code>groovebox.zip</code> from <a class="link" href="https://github.com/DiamondBond/q2-groovebox/releases/latest">github.com/DiamondBond/q2-groovebox/releases/latest</a>.</li>
+    <li>Plug the Q2 into your computer with the USB-C cable. The card shows up as a drive.</li>
+    <li>Unzip the file to the card’s root, so the card has a <code>.groovebox</code> folder. On macOS and Linux the leading dot hides the folder; Cmd+Shift+. shows it in Finder.</li>
+    <li>Eject and unplug the Q2.</li>
+  </ol>
+  <p>To open it from Home as well, choose Groovebox for <b>Shortcut</b> in <b>System settings → Display → Appearance</b>.</p>
+  </div>
+
+  <div class="sec">
+  <h2 id="first">Your first beat</h2>
+  <ol class="steps">
+    <li>Open <b>Library → Games → Groovebox</b>.</li>
+    <li>Press <b>Start</b>. A plain beat is already there.</li>
+    <li>Tap the numbered boxes to add or remove hits.</li>
+    <li>Turn the wheel to move to another sound, and tap its boxes too.</li>
+  </ol>
+  <figure class="one"><img src="shots/beat.png" alt="The Beat screen: Start, Tempo and Volume across the top, the sounds on the left, sixteen numbered steps on the right, and the tabs Beat, Pads, Sound and Song along the bottom">The Beat screen</figure>
+  <p>That’s all you need to begin. The tabs along the bottom are the four screens: <b>Beat</b> (<a class="link" href="#c2">Chapter 2</a>), <b>Pads</b> and <b>Sound</b> (<a class="link" href="#c3">Chapter 3</a>) and <b>Song</b> (<a class="link" href="#c5">Chapter 5</a>).</p>
+  </div>
+
+  <div class="sec">
+  <h2 id="keys">The keys</h2>
+  <p>The line above the tabs always says what the keys do on that screen. A value is always a labelled box: tap it, then turn the wheel. Tempo and Volume work the same way: tap one and it lights, the wheel changes it, and tapping anything else hands the wheel back.</p>
+  <table>
+    <thead><tr><th>Key</th><th>Does</th></tr></thead>
+    <tr><td>Play/Pause</td><td>Start and stop</td></tr>
+    <tr><td>Wheel</td><td>What the line above the tabs says: the sound on Beat, the lit box on a page of boxes</td></tr>
+    <tr><td>Centre</td><td>Hear the sound; in Load sound, pick the row</td></tr>
+    <tr><td>Return</td><td>Back; where there is nothing to go back to, undo</td></tr>
+    <tr><td>Return, held</td><td>Quit</td></tr>
+    <tr><td>Prev / Next</td><td>Sound: the previous or next sound. Beat, on a long track: the page of steps. Otherwise the previous or next beat</td></tr>
+  </table>
+  </div>
+</section>
+
+<section class="chapter" style="page: ch2">
+  <div class="opener"><h1 id="c2">Making a Beat</h1><div class="num">2</div></div>
+  <p class="lead">Tap in steps, then make each one your own.</p>
+
+  <div class="sec">
+  <h2 id="steps">Sounds and steps</h2>
+  <p>The list on the left is your sixteen sounds, and the boxes are the steps of the one that is lit. A row of four is one beat. A coloured bar in the list means that sound has steps. <b>Load sound</b> gives the lit sound a new one (<a class="link" href="#c4">Chapter 4</a>).</p>
+  </div>
+
+  <div class="sec">
+  <h2 id="step">Inside a step</h2>
+  <p>Hold a step to open it. Tap a box and turn the wheel to change it, and Centre lets you hear the result.</p>
+  <figure class="one"><img src="shots/step.png" alt="A step's boxes: Note, Volume, Decay, Filter, Roll, Chance, Accent, Slide and Nudge, with Remove step and Hear it on the left and Done below">Inside a step</figure>
+  <ul>
+    <li><b>Note, Volume, Decay, Filter:</b> this step’s own pitch and shape.</li>
+    <li><b>Roll:</b> how many hits in the step.</li>
+    <li><b>Chance:</b> how often it plays. Always is every time.</li>
+    <li><b>Accent, Slide, Nudge:</b> make it stronger, glide into it, or move it a little off the grid.</li>
+    <li><b>Remove step</b> takes it off, and <b>Done</b> or Return comes back.</li>
+  </ul>
+  </div>
+
+  <div class="sec">
+  <h2 id="options">Options</h2>
+  <p><b>Options</b>, under the sounds, sets up the lit sound’s track.</p>
+  <figure class="one"><img src="shots/track.png" alt="Options for the Hat track: Steps, Speed, Clear steps and Undo">Options</figure>
+  <ul>
+    <li><b>Steps:</b> up to 64. On a long track, arrows beside the hint turn the pages.</li>
+    <li><b>Speed:</b> 1/32 to 1/4, with triplets.</li>
+    <li><b>Clear steps</b> and <b>Undo</b>.</li>
+    <li>On a synth or the 303, <b>Make tune</b> writes a line in the song’s key and scale, <b>Vary tune</b> changes a few of its steps, and <b>Busy</b> sets how many notes it uses.</li>
+  </ul>
+  <p>Tracks of different lengths and speeds drift against each other, and a beat plays until its longest track ends.</p>
+  </div>
+</section>
+
+<section class="chapter" style="page: ch3">
+  <div class="opener"><h1 id="c3">Pads and Sounds</h1><div class="num">3</div></div>
+  <p class="lead">Play it live, and shape each sound.</p>
+
+  <div class="sec">
+  <h2 id="pads">Playing the pads</h2>
+  <div class="shots">
+    <figure><img src="shots/pads.png" alt="Drums: sixteen coloured pads named for the sounds">Drums</figure>
+    <figure><img src="shots/notes.png" alt="Notes: sixteen pads named for the notes of the scale">Notes</figure>
+  </div>
+  <ul>
+    <li><b>Drums</b> plays the sixteen sounds. The wheel is a filter sweep.</li>
+    <li><b>Notes</b> plays the lit sound up the song’s scale, or a drum loop’s slices and tricks. The wheel changes the sound.</li>
+  </ul>
+  </div>
+
+  <div class="sec">
+  <h2 id="effects">Effects and recording</h2>
+  <figure class="one"><img src="shots/effects.png" alt="Effects: pads named Loop 4, Stutter, Reverse, Crush, Echo and others">Effects</figure>
+  <p><b>Effects</b> are twenty-seven punch-in effects, in time with the tempo, on two pages: hold a pad to hear one, and the wheel turns the page.</p>
+  <p><b>Record</b> starts the beat if it is stopped and writes what you play onto the steps, quantised, effects included. Record again or Stop ends the take, and Return undoes it. On Effects, with no take to undo, Return clears the beat’s effects.</p>
+  </div>
+
+  <div class="sec">
+  <h2 id="sound">Shaping a sound</h2>
+  <p>The <b>Sound</b> tab has the lit sound’s controls, and <b>More</b> turns the page. Tap a box and turn the wheel; Centre plays the sound, so you can hear each change.</p>
+  <figure class="one"><img src="shots/sound.png" alt="The Sound tab: Volume, Pitch, Pan, Decay, Filter, Reso, Echo, Reverb and Attack">Sound</figure>
+  <p>A synth starts with its <b>Preset</b>, so the wheel walks through them. The 909, 808, 303 and drum loops show their own controls after Volume, Pitch, Echo, Reverb and Pan.</p>
+  </div>
+</section>
+
+<section class="chapter" style="page: ch4">
+  <div class="opener"><h1 id="c4">Loading Sounds</h1><div class="num">4</div></div>
+  <p class="lead">Swap in kits, synths, your own samples and recordings from your phone.</p>
+
+  <div class="sec">
+  <h2 id="load">Load sound</h2>
+  <p>Light a sound on the Beat screen and tap <b>Load sound</b>. Use the wheel and Centre, or tap a row; <b>Back</b> or Return goes up one.</p>
+  <div class="shots">
+    <figure><img src="shots/load.png" alt="Load sound: Drum kits, Single drums, Synths, 303 bass, Drum loops, Music on the card, From your phone">Load sound</figure>
+    <figure><img src="shots/load-kits.png" alt="Drum kits: 909 Live, 808 Live, 808, 909, Default, Melodic">Drum kits</figure>
+  </div>
+  <ul>
+    <li><b>Drum kits</b> replace all sixteen sounds and keep your steps. Default, 909, 808 and Melodic are samples; 909 Live and 808 Live are the machines.</li>
+    <li><b>Single drums:</b> any of the sixteen sounds of the 909 or 808, modelled as it plays.</li>
+    <li><b>Synths:</b> the engines Analog, Lofi, Trio, Wheel, Noise and Phase, and their presets. The list stays open and plays each one you pick, so you can try the next.</li>
+    <li><b>303 bass:</b> an acid voice with slide and accent.</li>
+    <li><b>Drum loops:</b> a loop cut into eight slices and rearranged as it plays, in time with the tempo: a built-in groove or fill, or the sound’s own sample.</li>
+  </ul>
+  </div>
+
+  <div class="sec">
+  <h2 id="kit">Your own kit</h2>
+  <p>A kit is a folder of WAV files, so you can make your own on a computer.</p>
+  <ol class="steps">
+    <li>On the Q2, close Groovebox: hold <b>Return</b>.</li>
+    <li>Plug the Q2 into your computer with the USB-C cable. The card shows up as a drive.</li>
+    <li>Open <code>.groovebox/kits</code> on the card. The leading dot hides <code>.groovebox</code> on a Mac (press Cmd+Shift+. in Finder) and on Linux (press Ctrl+H in the file manager).</li>
+    <li>Make a new folder there and name it for your kit. <b>Load sound → Drum kits</b> lists it by that name.</li>
+    <li>Copy in up to sixteen WAV files, named <code>01 Kick.wav</code>, <code>02 Snare.wav</code> and so on. The number sets the sound’s place in the list, and the rest of the name is what the screen shows.</li>
+    <li>Eject the card on your computer, unplug the Q2, then open Groovebox and choose your kit.</li>
+  </ol>
+  <p>Use plain WAV files: 8, 16 or 24-bit, any sample rate, mono or stereo. Each sound plays in mono, and only its first twenty seconds are kept. A file over 24 MB stays silent, and with fewer than sixteen files the other sounds are empty.</p>
+  </div>
+
+  <div class="sec">
+  <h2 id="card">Music on the card</h2>
+  <p>Pick any audio file the Q2 plays, then choose what to do with it:</p>
+  <ul>
+    <li>Use it on the lit sound, from the start or from one of the later start points, twenty seconds at most.</li>
+    <li>Slice it across all sixteen sounds, at its hits or evenly.</li>
+    <li>Use it as a drum loop.</li>
+  </ul>
+  <p>Trim it with <b>Start</b> and <b>End</b>. Loaded sounds are kept with the project, and a kit change clears them.</p>
+  </div>
+
+  <div class="sec">
+  <h2 id="phone">From your phone</h2>
+  <p>This shows an address. With the Q2 and the phone on the same Wi-Fi (the phone’s own hotspot works), open it in the phone’s browser and choose a recording, up to 64 MB. It’s saved to <code>Music/Groovebox/Drops</code>, and the Q2 goes straight to the choices above. The page exists only while that screen is open, under the code in its address.</p>
+  </div>
+</section>
+
+<section class="chapter" style="page: ch5">
+  <div class="opener"><h1 id="c5">Songs and Saving</h1><div class="num">5</div></div>
+  <p class="lead">Chain your beats into a song, and take it with you.</p>
+
+  <div class="sec">
+  <h2 id="song">Beats and songs</h2>
+  <p>On the <b>Song</b> tab the boxes are your sixteen beats. Tap one to play it, at the end of the one playing. The wheel is the tempo.</p>
+  <figure class="one"><img src="shots/song.png" alt="The Song tab: Add to song, Remove last, Copy beat, Save WAV and Settings, with sixteen numbered beats">Song</figure>
+  <ul>
+    <li><b>Add to song</b> puts the beat on the end of the list shown above the tabs, and <b>Remove last</b> takes one off. With two or more, the beats play in turn and loop.</li>
+    <li><b>Copy beat</b> copies this one to the next empty beat and goes there.</li>
+  </ul>
+  </div>
+
+  <div class="sec">
+  <h2 id="wav">Save WAV</h2>
+  <p><b>Save WAV</b> renders the beat, or the whole song, to <code>Music/Groovebox/1-&lt;n&gt;.wav</code>, 44.1 kHz 16-bit stereo, without the volume or the sweep. It’s an ordinary music file: it plays in the player after <b>Library → Update Local Music</b>, and it stays when you remove Groovebox. Load it back from <b>Music on the card</b> to resample it.</p>
+  </div>
+
+  <div class="sec">
+  <h2 id="settings">Settings</h2>
+  <p><b>Settings</b> has the song’s swing, key and scale, and the effects on the mix: distortion, drive and compression, and the echo and reverb that the sounds’ Echo and Reverb send to.</p>
+  <figure class="one"><img src="shots/settings.png" alt="Settings: Swing, Key, Scale, FX type, Distort, Drive, Compress, Rev time and Rev tone">Settings</figure>
+  </div>
+
+  <div class="sec">
+  <h2 id="projects">Your projects</h2>
+  <p>Your work lives in <code>.groovebox/projects/</code> on the card, saved two seconds after a change and on the way out. It survives an update; removing Groovebox deletes it.</p>
+  </div>
+</section>
+
+<section class="chapter" style="page: ch6">
+  <div class="opener"><h1 id="c6">Updating and Help</h1><div class="num">6</div></div>
+  <p class="lead">Keep Groovebox up to date, and find out what went wrong.</p>
+
+  <div class="sec">
+  <h2 id="update">Updating and removing</h2>
+  <p>To update, press Centre on Groovebox’s <b>Update</b> row in <b>System settings → App Store</b>, or unzip a newer release over it. Your projects and your own kits stay.</p>
+  <p>To remove it, press its <b>Installed</b> row in the App Store twice, or delete the <code>.groovebox</code> folder. Your projects and kits go with it; the WAVs in <code>Music/Groovebox</code> stay.</p>
+  </div>
+
+  <div class="sec">
+  <h2 id="trouble">Troubleshooting</h2>
+  <ul>
+    <li><b>Groovebox isn’t in Library → Games:</b> it isn’t installed, or Q2 Pod is older than 1.7.2. The card needs a <code>.groovebox</code> folder at its top level.</li>
+    <li><b>It quits by itself:</b> left stopped and untouched for five minutes, it quits. Your beat is saved.</li>
+    <li><b>“Can’t read it”:</b> Groovebox can’t use that file, or a kit has no WAV it can read. In a kit, compressed or 32-bit WAVs don’t load; export them as 16-bit.</li>
+    <li><b>“Loaded, not saved”:</b> the sound plays, but it couldn’t be saved to the card, so it’ll be gone next time. Make room on the card and load it again.</li>
+    <li><b>“Couldn’t save it”</b> after Save WAV: make room on the card and try again.</li>
+    <li><b>Your kit isn’t in the list:</b> it must be a folder directly inside <code>.groovebox/kits</code>, with a name that doesn’t start with a dot.</li>
+    <li><b>The screen stops answering:</b> after eight seconds Groovebox writes what it was doing to <code>.groovebox/freeze.txt</code>, and it ends itself unless the screen comes back within two more.</li>
+  </ul>
+  <div class="note important"><p><span class="label">Getting help:</span> report a problem at <a class="link" href="https://github.com/DiamondBond/q2-groovebox/issues">github.com/DiamondBond/q2-groovebox/issues</a>, with what you did, what happened, and <code>.groovebox/freeze.txt</code> from the card if there is one.</p></div>
+  </div>
+
+  <div class="legal">Groovebox for Q2 Pod is an independent project and is not affiliated with, endorsed by or sponsored by Shanling. Shanling and Q2 are trademarks of Shanling. Screens in this guide are the app’s own, rendered on a computer. This guide follows the design of the Q2 Pod User Guide. The app and this guide are released under GPL-3.0-only; CREDITS.md in the repo names the code and sounds it builds on.</div>
+</section>
+
+</body>
+</html>

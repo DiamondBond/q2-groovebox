@@ -4,6 +4,9 @@ A groovebox for the Shanling Q2, as a card app: sixteen pads, each a sample, a s
 909, 808, 303 or break; a step sequencer with parameter locks, ratchets, chance and songs;
 punch-in effects, echo and reverb; and the DAC you already carry.
 
+The [mini-guide](https://github.com/DiamondBond/q2-groovebox/raw/main/docs/guide/Groovebox-Mini-Guide.pdf)
+(PDF) shows how to use it, and how to make your own drum kit.
+
 It needs Q2 Pod 1.7.2 or later for its sound and media keys. Unzip `groovebox.zip` to the card's
 root (it holds one folder, `.groovebox`). It then appears under Games and as the **Groovebox**
 choice of the Shortcut setting.
@@ -116,7 +119,9 @@ window (mouse = finger, scroll = wheel, Enter = Centre, Backspace = Return, Spac
 Prev/Next), and `--script FILE OUTDIR` replays input lines and writes frames (`tests/beat.txt` walks
 every mode; `GROOVEBOX_MEDIA` is the folder Load browses). `make check` runs the asserts, and
 requires the lifted effects to match SLOOP's own output. `tools/upstream.sh` regenerates what comes
-from upstream at the pinned commits: the tables, those hashes and the kits.
+from upstream at the pinned commits: the tables, those hashes and the kits. `docs/guide/build.py`
+rebuilds the mini-guide's PDF (needs Chromium and `pdftotext`); its screens are frames from
+`tests/beat.txt`.
 
 ## Credits
 

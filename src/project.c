@@ -172,16 +172,11 @@ int project_save(const char *dir) {
     return ok && rename(tmp, path) == 0;
 }
 
-void project_freeze_note(const char *dir) {
+void project_freeze_take(char *b, size_t n) { /* memory and procfs only: a stuck card can't hold it up */
     static const char *const what[4] = { "comm", "stat", "wchan", "syscall" };
-    char path[300], tmp[310];
-    snprintf(path, sizeof path, "%s/freeze.txt", dir);
-    snprintf(tmp, sizeof tmp, "%s.new", path);
-    FILE *f = fopen(tmp, "w");
-    if (!f) return;
     unsigned blocks = engine_blocks();
     usleep(200000); /* no blocks in this wait: the audio thread is stuck too */
-    fprintf(f, "playing=%d bpm=%d load=%d underruns=%d blocks_in_200ms=%u\n", seq.playing, seq.bpm, engine_load_now(), plat_underruns(), engine_blocks() - blocks);
+    int l = snprintf(b, n, "playing=%d bpm=%d load=%d underruns=%d blocks_in_200ms=%u\n", seq.playing, seq.bpm, engine_load_now(), plat_underruns(), engine_blocks() - blocks);
     DIR *d = opendir("/proc/self/task");
     for (struct dirent *e; d && (e = readdir(d));) {
         if (e->d_name[0] == '.') continue;
@@ -189,12 +184,26 @@ void project_freeze_note(const char *dir) {
             char p[64], line[256];
             snprintf(p, sizeof p, "/proc/self/task/%.16s/%s", e->d_name, what[i]);
             FILE *t = fopen(p, "r");
-            if (t && fgets(line, sizeof line, t)) fprintf(f, "%s %s %.*s\n", e->d_name, what[i], (int)strcspn(line, "\n"), line);
+            if (t && l < (int)n && fgets(line, sizeof line, t)) l += snprintf(b + l, n - (size_t)l, "%s %s %.*s\n", e->d_name, what[i], (int)strcspn(line, "\n"), line);
             if (t) fclose(t);
         }
     }
     if (d) closedir(d);
-    if (fflush(f) == 0 && fsync(fileno(f)) == 0 && fclose(f) == 0) rename(tmp, path);
+}
+int project_freeze_stuck(unsigned beat, int ms) {
+    for (; ms > 0 && ui_beat == beat; ms -= 100) usleep(100000);
+    return ui_beat == beat;
+}
+void project_freeze_note(const char *dir, const char *head, const char *threads) {
+    char path[300], tmp[310];
+    snprintf(path, sizeof path, "%s/freeze.txt", dir);
+    snprintf(tmp, sizeof tmp, "%s.new", path);
+    FILE *f = fopen(tmp, "w");
+    if (!f) return;
+    fputs(head, f);
+    fputs(threads, f);
+    int ok = fflush(f) == 0 && fsync(fileno(f)) == 0;
+    if (fclose(f) == 0 && ok) rename(tmp, path);
 }
 
 int project_load(const char *dir) {

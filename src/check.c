@@ -590,10 +590,12 @@ int main(void) {
     wheel(-10, 1000); assert(ui.acc == 10); wheel(-10, 1100); assert(ui.acc == 7);
     wheel(-10, 1100 + WHEEL_REST_MS); assert(ui.acc == 10); wheel(10, 1400); assert(ui.acc == -10);
     pick.open = 0;
-    /* the freeze record: every thread's lines, whole, and no .new left */
-    { char d[] = "/tmp/gbfreezeXXXXXX", pf[300], got[4096] = ""; assert(mkdtemp(d)); project_freeze_note(d);
+    /* the freeze record: every thread's lines, whole, and no .new left; a full buffer stays in bounds; a stall that ends is seen */
+    ui_beat = 5; assert(project_freeze_stuck(5, 100)); ui_beat = 7; assert(!project_freeze_stuck(5, 100000)); ui_beat = 0; assert(!project_freeze_stuck(5, 100000));
+    { char tiny[40]; project_freeze_take(tiny, sizeof tiny); assert(strlen(tiny) < sizeof tiny); }
+    { char d[] = "/tmp/gbfreezeXXXXXX", pf[300], got[4096] = "", threads[8192]; assert(mkdtemp(d)); project_freeze_take(threads, sizeof threads); project_freeze_note(d, "stalled_ms=9000 in=save recovered=1\n", threads);
       snprintf(pf, sizeof pf, "%s/freeze.txt", d); FILE *f = fopen(pf, "r"); assert(f); assert(fread(got, 1, sizeof got - 1, f) > 0); fclose(f);
-      assert(strstr(got, "blocks_in_200ms=") && strstr(got, " comm ") && strstr(got, " stat ") && strstr(got, " wchan "));
+      assert(!strncmp(got, "stalled_ms=9000 in=save", 23) && strstr(got, "blocks_in_200ms=") && strstr(got, " comm ") && strstr(got, " stat ") && strstr(got, " wchan "));
       strcat(pf, ".new"); assert(access(pf, F_OK)); char cmd[64]; snprintf(cmd, sizeof cmd, "rm -rf '%s'", d); assert(!system(cmd)); }
     puts("check: ok");
     return 0;

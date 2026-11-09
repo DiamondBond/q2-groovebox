@@ -104,7 +104,8 @@ Projects live in `.groovebox/projects/` on the card, saved two seconds after a c
 out. They survive an update; Remove deletes them.
 
 Left stopped and untouched for five minutes, Groovebox quits. If its screen stops answering for eight
-seconds it ends itself and writes what each thread was doing to `.groovebox/freeze.txt`.
+seconds it writes what each thread was doing to `.groovebox/freeze.txt`, and ends itself unless the
+screen comes back within two more.
 
 ## Building
 

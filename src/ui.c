@@ -61,7 +61,8 @@
 #define ROW_H 31           /* the picker's rows */
 #define PICK_ROWS 7
 #define PICK_MAX 512       /* ponytail: the first 512 of a folder are listed */
-#define DETENT 13          /* wheel units a step: sixteen a turn of 200 */
+#define DETENT 13          /* wheel units a step of a value: sixteen a turn of 200 */
+#define DETENT_MOVE 28     /* a step between sounds, rows or pages: seven a turn, Q2 Pod's lists at their default */
 #define WHEEL_REST_MS 250 /* the firmware sends no lift: a gap this long is a new touch */
 #define HOLD_MS 300        /* a step down this long opens */
 #define IDLE_QUIT_MS (5 * 60 * 1000)
@@ -584,24 +585,24 @@ static void box_next(void) {
 static void open_over(int over) { ui.over = over, ui.box = ui.box_page = 0; }
 
 /* ---- the wheel ---- */
-static int detents(int d) { /* units to whole steps, the remainder kept */
+static int detents(int d, int unit) { /* units to whole steps, the remainder kept */
     ui.acc += d;
     int n = 0;
-    while (ui.acc >= DETENT) ui.acc -= DETENT, ++n;
-    while (ui.acc <= -DETENT) ui.acc += DETENT, --n;
+    while (ui.acc >= unit) ui.acc -= unit, ++n;
+    while (ui.acc <= -unit) ui.acc += unit, --n;
     return n;
 }
 static void wheel(int d, long long now) {
     d = -d; /* the firmware's travel rises anticlockwise; here clockwise is up */
     if (now - ui.wheel_at >= WHEEL_REST_MS || (d ^ ui.acc) < 0) ui.acc = 0; /* as the firmware's lists: a new touch or a reversal starts a whole step away */
     ui.wheel_at = now;
-    if (pick.open) { pick_move(detents(d)); return; }
+    if (pick.open) { pick_move(detents(d, DETENT_MOVE)); return; }
     if (ui.wheel_to == WT_MODE && !boxes_on() && ui.mode == M_PADS && ui.pads == PADS_DRUMS) { /* the sweep: continuous, a turn end to end */
         ui.sweep = clampi(ui.sweep + d, -100, 100);
         engine_sweep(abs(ui.sweep) < 4 ? 0 : ui.sweep); /* a rest at the centre */
         return;
     }
-    int n = detents(d);
+    int n = detents(d, ui.wheel_to != WT_MODE || ui.mode == M_SONG || boxes_on() ? DETENT : DETENT_MOVE);
     if (!n) return;
     if (ui.wheel_to == WT_VOL) ui.vol = clampi(ui.vol + n * 5, 0, 100), set_gain();
     else if (ui.wheel_to == WT_BPM || (ui.mode == M_SONG && !ui.over)) seq.bpm = clampi(seq.bpm + n, 40, 240), changed(now);

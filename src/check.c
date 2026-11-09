@@ -159,10 +159,10 @@ int main(void) {
     seq_undo(); assert(!seq.pat[0].s[0][2].on && !seq.pat[0].s[0][3].on && seq.ntake == 0);
     /* the wheel: 200 units a turn are 15 detents and a remainder; a jitter of +-3 is none */
     ui_init(); int n = 0;
-    for (int i = 0; i < 20; ++i) n += detents(10);
+    for (int i = 0; i < 20; ++i) n += detents(10, DETENT);
     assert(n == 15 && ui.acc == 5);
     ui.acc = 0; n = 0;
-    for (int i = 0; i < 50; ++i) n += detents(i & 1 ? 3 : -3);
+    for (int i = 0; i < 50; ++i) n += detents(i & 1 ? 3 : -3, DETENT);
     assert(n == 0);
     /* the limiter: a +12 dB sum never clips */
     engine_init(); static short loud[4000]; for (int i = 0; i < 4000; ++i) loud[i] = (short)(i & 1 ? 32767 : -32767);
@@ -187,7 +187,7 @@ int main(void) {
     char p[300]; snprintf(p, sizeof p, "%s/project.txt", d); unlink(p); rmdir(d);
     /* Beat: step 1 is top-left, a tap turns it on and off; a hold opens it instead, the wheel there writes it, Return comes back */
     seq_init(); engine_init(); ui_init(); memset(&pick, 0, sizeof pick);
-    event_t w = { 'w', 0, -13, 0 }; /* a clockwise detent */
+    event_t w = { 'w', 0, -13, 0 }, m = { 'w', 0, -DETENT_MOVE, 0 }; /* a clockwise detent of a value, and of a move */
     { const step_t *s5 = &seq.pat[0].s[0][5];
       assert(ui.mode == M_BEAT); tap_pad(0, 30); assert(seq.pat[0].s[0][0].on); tap_pad(0, 40); assert(!seq.pat[0].s[0][0].on);
       event_t h = tap_of(cell_x(5) + 5, cell_y(5) + 5, 'd'); ui_event(&h, 50); ui_tick(50 + HOLD_MS - 1); assert(!ui.over); ui_tick(50 + HOLD_MS); assert(ui.over == O_STEP && ui.step == 5);
@@ -201,16 +201,16 @@ int main(void) {
       press(KEY_RETURN, 440); assert(!ui.over && s5->on && !seq.ntake);
       hold_step(5, 450); assert(ui.over == O_STEP); tap_left(5, 3, 800); assert(!ui.over && !s5->on && s5->level == UNSET && !s5->flags); }
     /* the wheel walks the sounds, the list's window following; tapping a row picks it */
-    for (int i = 0; i < 7; ++i) ui_event(&w, 810);
+    for (int i = 0; i < 7; ++i) ui_event(&m, 810);
     assert(ui.sound == 7 && ui.list_top == 3);
     tap_at(SIDE + 5, BODY_Y + 1 * LIST_ROW + 5, 811); assert(ui.sound == 4);
     tap_at(SIDE + 5, SMALL_Y - 1, 811); assert(ui.sound == 7 && !ui.over && !pick.open); /* the last row runs right down to the buttons */
-    w.a = 13; for (int i = 0; i < 20; ++i) ui_event(&w, 812);
-    w.a = -13; assert(!ui.sound && !ui.list_top);
+    m.a = DETENT_MOVE; for (int i = 0; i < 20; ++i) ui_event(&m, 812);
+    m.a = -DETENT_MOVE; assert(!ui.sound && !ui.list_top);
     /* the top row: Start runs; Tempo lends the wheel until anything else is touched; so does Volume */
     tap_at(pill_x(0) + 5, TOP_Y + 5, 820); assert(seq.playing); tap_at(pill_x(0) + 5, TOP_Y + 5, 821); assert(!seq.playing);
     tap_at(pill_x(1) + 5, TOP_Y + 5, 822); assert(ui.wheel_to == WT_BPM); ui_event(&w, 823); assert(seq.bpm == 121 && !ui.sound);
-    tap_pad(3, 824); assert(ui.wheel_to == WT_MODE); ui_event(&w, 825); assert(seq.bpm == 121 && ui.sound == 1);
+    tap_pad(3, 824); assert(ui.wheel_to == WT_MODE); ui_event(&m, 825); assert(seq.bpm == 121 && ui.sound == 1);
     tap_at(pill_x(2) + 5, TOP_Y + 5, 826); w.a = 13; ui_event(&w, 827); w.a = -13; assert(ui.vol == 95); tap_at(pill_x(2) + 5, TOP_Y + 5, 828); assert(ui.wheel_to == WT_MODE);
     /* Record starts the beat; Stop ends the take and Return still undoes it; then there is nothing left to undo */
     seq_init(); engine_init(); ui_init(); tap_tab(M_PADS, 830); assert(ui.mode == M_PADS);
@@ -318,7 +318,7 @@ int main(void) {
     seq_init(); engine_init(); ui_init(); memset(&pick, 0, sizeof pick); ui.sound = 2;
     tap_left(5, 3, 10); assert(pick.open && pick.menu == PM_ROOT && pick.n == R_PHONE + 1 && pick.row[R_KITS].kind == 'K' && pick.row[R_CARD].kind == 'm' && pick.row[R_PHONE].kind == 'p');
     { static pix cv[W * H]; ui_render(cv, 30); }
-    w.a = -13 * 10; ui_event(&w, 40); w.a = -13; assert(pick.cur == R_PHONE);
+    m.a = -DETENT_MOVE * 10; ui_event(&m, 40); m.a = -DETENT_MOVE; assert(pick.cur == R_PHONE);
     centre_on_row(R_CARD, 50); ui_tick(51); assert(pick.menu == PM_DIR && pick.n == 3 && pick.row[0].kind == 'd' && !strcmp(pick.row[0].name, "Music") && !strcmp(pick.row[1].name, "sub") && pick.row[2].kind == 'f');
     centre_on_row(0, 52); ui_tick(53); assert(!strcmp(strrchr(pick.dir, '/'), "/Music") && pick.n == 0);
     press(KEY_RETURN, 54); ui_tick(55); assert(pick.open && pick.n == 3);
@@ -354,7 +354,7 @@ int main(void) {
     seq_init(); engine_init(); ui_init(); memset(&pick, 0, sizeof pick); ui.mode = M_PADS; ui.pads = PADS_FX;
     event_t f0 = tap_of(cell_x(1) + 5, cell_y(1) + 5, 'd');
     ui_event(&f0, 10); assert(fx_sounding() == fx_page[0][1]); f0.what = 'u'; ui_event(&f0, 20); assert(fx_sounding() == -1);
-    ui_event(&w, 90); ui_event(&w, 91); assert(ui.fx_page == FX_PAGES - 1); w.a = 13; ui_event(&w, 95); w.a = -13; assert(!ui.fx_page);
+    ui_event(&m, 90); ui_event(&m, 91); assert(ui.fx_page == FX_PAGES - 1); m.a = DETENT_MOVE; ui_event(&m, 95); m.a = -DETENT_MOVE; assert(!ui.fx_page);
     /* with Record on it is written quantised, played back, undone, and Return with nothing to undo clears the beat's effects */
     seq_play(1); seq_rec(1); seq.pos = 2 * 5512 + 100; f0.what = 'd'; ui_event(&f0, 100); seq.pos = 6 * 5512 + 50; f0.what = 'u'; ui_event(&f0, 110);
     assert(seq.pat[0].nev == 1 && seq.pat[0].ev[0].step == 2 && seq.pat[0].ev[0].len == 4 && seq.pat[0].ev[0].fx == fx_page[0][1] && fx_sounding() == -1);
@@ -507,7 +507,7 @@ int main(void) {
     /* with Record on and the beat running the note lands on its step, its pitch kept */
     engine_stop(1); seq_play(1); seq_rec(1); seq.pos = 5512 + 100; ui.sound = 0; tap_pad(4, 40); assert(seq.pat[0].s[0][1].on && seq.pat[0].s[0][1].pitch == 2 + seq_scale_note(4)); seq_play(0); seq_rec(0);
     /* the wheel changes the sound the notes are on */
-    ui.sound = 0; ui_event(&w, 50); assert(ui.sound == 1);
+    ui.sound = 0; ui_event(&m, 50); assert(ui.sound == 1);
     /* on a break the pads are its slices and tricks: the eleventh is the last that means anything (ASan) */
     assert(load_break_builtin(3, 0)); ui.sound = 3; tap_pad(0, 80); tap_pad(10, 90); tap_pad(15, 100);
     /* Options: Steps makes pages, the keys and the arrows turn them, a short track keeps its cells */
@@ -587,9 +587,10 @@ int main(void) {
     clear_pads();
     /* the wheel: a part of a step is forgotten over a pause or a reversal, and kept through a turn */
     ui_init(); pick.open = 1; pick.n = 0;
-    wheel(-10, 1000); assert(ui.acc == 10); wheel(-10, 1100); assert(ui.acc == 7);
+    wheel(-10, 1000); assert(ui.acc == 10); wheel(-10, 1100); assert(ui.acc == 20);
     wheel(-10, 1100 + WHEEL_REST_MS); assert(ui.acc == 10); wheel(10, 1400); assert(ui.acc == -10);
     pick.open = 0;
+    wheel(-13, 2000); assert(!ui.sound); wheel(-15, 2001); assert(ui.sound == 1 && !ui.acc); /* a value's worth of travel moves no sound */
     /* the freeze record: every thread's lines, whole, and no .new left; a full buffer stays in bounds; a stall that ends is seen */
     ui_beat = 5; assert(project_freeze_stuck(5, 100)); ui_beat = 7; assert(!project_freeze_stuck(5, 100000)); ui_beat = 0; assert(!project_freeze_stuck(5, 100000));
     { char tiny[40]; project_freeze_take(tiny, sizeof tiny); assert(strlen(tiny) < sizeof tiny); }

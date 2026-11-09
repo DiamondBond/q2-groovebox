@@ -99,7 +99,7 @@ int plat_wait(int ms, event_t *e) {
         e->a = ev.type == SDL_MOUSEMOTION ? ev.motion.x : ev.button.x;
         e->b = ev.type == SDL_MOUSEMOTION ? ev.motion.y : ev.button.y;
         return 1;
-    case SDL_MOUSEWHEEL: e->kind = 'w', e->a = -ev.wheel.y * 13; return 1; /* a notch a detent, anticlockwise-positive as the Q2 */
+    case SDL_MOUSEWHEEL: e->kind = 'w', e->a = -ev.wheel.y * 28; return 1; /* a notch a step between sounds or rows (two of a value), anticlockwise-positive as the Q2 */
     }
     return 0;
 }

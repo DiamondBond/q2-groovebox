@@ -8,8 +8,9 @@ The [mini-guide](https://github.com/DiamondBond/q2-groovebox/raw/main/docs/guide
 (PDF) shows how to use it, and how to make your own drum kit.
 
 It needs Q2 Pod 1.7.2 or later for its sound and media keys. Unzip `groovebox.zip` to the card's
-root (it holds one folder, `.groovebox`). It then appears under Games and as the **Groovebox**
-choice of the Shortcut setting.
+root (it holds one folder, `.groovebox`). It then appears in Library → Apps (on Q2 Pod 1.8.8 in
+the Library, above Games; older, under Games) and as the **Groovebox** choice of the Shortcut
+setting.
 
 Sound goes to whatever Q2 Pod is playing through: the headphone jack, Bluetooth or a USB DAC. On
 USB it opens the first USB-Audio card at 44.1 kHz 16-bit. The volume starts where Q2 Pod's was.

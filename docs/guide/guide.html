@@ -140,13 +140,13 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ .shots), p:has(+ figure), h2 {
 
   <div class="sec">
   <h2 id="about">Groovebox</h2>
-  <p><b>Library → Games → Groovebox</b> turns the Q2 into a drum machine and step sequencer: sixteen sounds, each a sample, a synth or a live 909, 808, 303 or drum loop; a sequencer with rolls, chance and songs; and punch-in effects, echo and reverb. It isn’t in the firmware: it runs from the microSD card.</p>
+  <p><b>Library → Apps → Groovebox</b> turns the Q2 into a drum machine and step sequencer: sixteen sounds, each a sample, a synth or a live 909, 808, 303 or drum loop; a sequencer with rolls, chance and songs; and punch-in effects, echo and reverb. It isn’t in the firmware: it runs from the microSD card.</p>
   <p>Your music stops while it’s open, and its sound goes to whatever Q2 Pod was playing through: the headphone jack, Bluetooth or a USB DAC. The volume starts where Q2 Pod’s was.</p>
   </div>
 
   <div class="sec">
   <h2 id="install">Installing Groovebox</h2>
-  <p>You need Q2 Pod 1.7.2 or later. The easy way is over Wi-Fi: open <b>System settings → App Store</b> and press Centre on <b>Groovebox</b>.</p>
+  <p>You need Q2 Pod 1.7.2 or later. The easy way is over Wi-Fi: open <b>Library → App Store</b> and press Centre on <b>Groovebox</b>.</p>
   <p>Or by hand:</p>
   <ol class="steps">
     <li>Download <code>groovebox.zip</code> from <a class="link" href="https://github.com/DiamondBond/q2-groovebox/releases/latest">github.com/DiamondBond/q2-groovebox/releases/latest</a>.</li>
@@ -160,7 +160,7 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ .shots), p:has(+ figure), h2 {
   <div class="sec">
   <h2 id="first">Your first beat</h2>
   <ol class="steps">
-    <li>Open <b>Library → Games → Groovebox</b>.</li>
+    <li>Open <b>Library → Apps → Groovebox</b>.</li>
     <li>Press <b>Start</b>. A plain beat is already there.</li>
     <li>Tap the numbered boxes to add or remove hits.</li>
     <li>Turn the wheel to move to another sound, and tap its boxes too.</li>
@@ -318,7 +318,7 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ .shots), p:has(+ figure), h2 {
 
   <div class="sec">
   <h2 id="wav">Save WAV</h2>
-  <p><b>Save WAV</b> renders the beat, or the whole song, to <code>Music/Groovebox/1-&lt;n&gt;.wav</code>, 44.1 kHz 16-bit stereo, without the volume or the sweep. It’s an ordinary music file: it plays in the player after <b>Library → Update Local Music</b>, and it stays when you remove Groovebox. Load it back from <b>Music on the card</b> to resample it.</p>
+  <p><b>Save WAV</b> renders the beat, or the whole song, to <code>Music/Groovebox/1-&lt;n&gt;.wav</code>, 44.1 kHz 16-bit stereo, without the volume or the sweep. It’s an ordinary music file: it plays in the player after <b>Library → Update Library</b>, and it stays when you remove Groovebox. Load it back from <b>Music on the card</b> to resample it.</p>
   </div>
 
   <div class="sec">
@@ -339,14 +339,14 @@ p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ .shots), p:has(+ figure), h2 {
 
   <div class="sec">
   <h2 id="update">Updating and removing</h2>
-  <p>To update, press Centre on Groovebox’s <b>Update</b> row in <b>System settings → App Store</b>, or unzip a newer release over it. Your projects and your own kits stay.</p>
-  <p>To remove it, press its <b>Installed</b> row in the App Store twice, or delete the <code>.groovebox</code> folder. Your projects and kits go with it; the WAVs in <code>Music/Groovebox</code> stay.</p>
+  <p>To update, press Centre on Groovebox in <b>Library → App Store</b> when it says <b>UPDATE</b>, or unzip a newer release over it. Your projects and your own kits stay.</p>
+  <p>To remove it, press its row in the App Store twice while it says <b>INSTALLED</b>, or delete the <code>.groovebox</code> folder. Your projects and kits go with it; the WAVs in <code>Music/Groovebox</code> stay.</p>
   </div>
 
   <div class="sec">
   <h2 id="trouble">Troubleshooting</h2>
   <ul>
-    <li><b>Groovebox isn’t in Library → Games:</b> it isn’t installed, or Q2 Pod is older than 1.7.2. The card needs a <code>.groovebox</code> folder at its top level.</li>
+    <li><b>Groovebox isn’t in Library → Apps:</b> it isn’t installed, or Q2 Pod is older than 1.8.9, which shows it in the Library (1.8.8) or under Games. It needs 1.7.2 or later. The card needs a <code>.groovebox</code> folder at its top level.</li>
     <li><b>It quits by itself:</b> left stopped and untouched for five minutes, it quits. Your beat is saved.</li>
     <li><b>“Can’t read it”:</b> Groovebox can’t use that file, or a kit has no WAV it can read. In a kit, compressed or 32-bit WAVs don’t load; export them as 16-bit.</li>
     <li><b>“Loaded, not saved”:</b> the sound plays, but it couldn’t be saved to the card, so it’ll be gone next time. Make room on the card and load it again.</li>
